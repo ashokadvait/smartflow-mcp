@@ -140,7 +140,9 @@ export async function downloadAndValidateRecording(recordingId: string): Promise
   }
 
   const checksum = hash.digest("hex");
-  const storageDir = path.resolve(env.AUDIO_STORAGE_PATH);
+  const storageDir = process.env.VERCEL
+    ? "/tmp/smartflow-audio"
+    : path.resolve(env.AUDIO_STORAGE_PATH);
   await fs.mkdir(storageDir, { recursive: true, mode: 0o700 });
 
   const ext = guessExtension(contentType);

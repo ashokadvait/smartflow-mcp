@@ -1,12 +1,24 @@
+import Fastify from "fastify";
 import { buildApp } from "./api/app.js";
 import { env } from "./config/env.js";
 import { closeDb } from "./db/client.js";
 import { logger } from "./utils/logger.js";
 
-async function main() {
-  const app = buildApp();
-  await app.listen({ port: env.PORT, host: "0.0.0.0" });
-  logger.info({ port: env.PORT }, "SmartFlow Intelligence HTTP API listening");
+// Keep explicit Fastify import in entrypoint for Vercel native framework detection.
+void Fastify;
+
+const app = buildApp();
+
+if (!process.env.VERCEL) {
+  app
+    .listen({ port: env.PORT, host: "0.0.0.0" })
+    .then(() => {
+      logger.info({ port: env.PORT }, "SmartFlow Intelligence HTTP API listening");
+    })
+    .catch((err) => {
+      logger.fatal({ err }, "Failed to start SmartFlow Intelligence server");
+      process.exit(1);
+    });
 
   const shutdown = async () => {
     logger.info("Shutting down HTTP server...");
@@ -19,8 +31,4 @@ async function main() {
   process.on("SIGTERM", shutdown);
 }
 
-main().catch((err) => {
-  logger.fatal({ err }, "Failed to start SmartFlow Intelligence server");
-  process.exit(1);
-});
-
+export default app;

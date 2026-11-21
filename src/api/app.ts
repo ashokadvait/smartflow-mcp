@@ -276,8 +276,16 @@ export function buildApp() {
     return getSafeProviderMetadata();
   });
 
-  // Queue depths & health (observability)
+  // Queue depths & health (observability; degrades gracefully in serverless without Redis)
   app.get("/api/v1/queues/status", { preHandler: requireApiKey }, async () => {
+    if (process.env.VERCEL && !process.env.REDIS_URL) {
+      return {
+        sync: { waiting: 0, active: 0, completed: 0, failed: 0 },
+        recording: { waiting: 0, active: 0, completed: 0, failed: 0 },
+        transcription: { waiting: 0, active: 0, completed: 0, failed: 0 },
+        analysis: { waiting: 0, active: 0, completed: 0, failed: 0 },
+      };
+    }
     const { syncQueue, recordingQueue, transcriptionQueue, analysisQueue } = createQueues();
     const [sync, recording, transcription, analysis] = await Promise.all([
       syncQueue.getJobCounts(),
@@ -288,14 +296,13 @@ export function buildApp() {
     return { sync, recording, transcription, analysis };
   });
 
-  // Enqueue pending answered calls for background worker processing
+  // Enqueue pending answered calls (or process inline on Vercel serverless when Redis is absent)
   app.post("/api/v1/queues/enqueue-pending", { preHandler: requireApiKey }, async (req) => {
     const tenant = await getOrCreateDefaultTenant();
     const body = z
       .object({ limit: z.number().int().min(1).max(200).default(50) })
       .parse(req.body ?? {});
 
-    const { recordingQueue } = createQueues();
     const pending = await db
       .select({ recordingId: recordings.id, callId: calls.id })
       .from(calls)
@@ -303,8 +310,23 @@ export function buildApp() {
       .leftJoin(callAnalyses, eq(callAnalyses.callId, calls.id))
       .where(and(eq(calls.tenantId, tenant.id), eq(calls.status, "answered"), isNull(callAnalyses.id)))
       .orderBy(desc(calls.startedAt))
-      .limit(body.limit);
+      .limit(process.env.VERCEL && !process.env.REDIS_URL ? Math.min(body.limit, 5) : body.limit);
 
+    if (process.env.VERCEL && !process.env.REDIS_URL) {
+      let processed = 0;
+      for (const item of pending) {
+        try {
+          await transcribeCallRecording(item.callId);
+          await analyzeCallTranscript(item.callId);
+          processed += 1;
+        } catch (err) {
+          logger.warn({ callId: item.callId, err }, "Inline serverless call processing failed");
+        }
+      }
+      return { enqueued: processed, mode: "inline" };
+    }
+
+    const { recordingQueue } = createQueues();
     for (const item of pending) {
       await recordingQueue.add(
         "process-recording",
@@ -313,7 +335,7 @@ export function buildApp() {
       );
     }
 
-    return { enqueued: pending.length };
+    return { enqueued: pending.length, mode: "queue" };
   });
 
   // Smartflo webhook receiver (fast 200 OK; Smartflo retries only twice)

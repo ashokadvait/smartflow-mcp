@@ -1,0 +1,9 @@
+{
+  "functions": {
+    "src/index.ts": {
+      "includeFiles": "src/ui/**/*",
+      "maxDuration": 60
+    }
+  }
+}
+
