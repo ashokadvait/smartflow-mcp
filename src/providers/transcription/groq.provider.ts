@@ -1,4 +1,4 @@
-import Groq from "groq-sdk";
+import { Groq } from "groq-sdk";
 import { createReadStream } from "node:fs";
 import { env } from "../../config/env.js";
 import type { TranscriptionProvider, TranscriptionResult } from "../types.js";

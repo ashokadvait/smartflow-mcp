@@ -1,5 +1,5 @@
-import Groq from "groq-sdk";
-import OpenAI from "openai";
+import { Groq } from "groq-sdk";
+import { OpenAI } from "openai";
 import { GoogleGenAI } from "@google/genai";
 import type { z } from "zod";
 import { env } from "../../config/env.js";

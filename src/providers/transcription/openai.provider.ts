@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+import { OpenAI } from "openai";
 import { createReadStream } from "node:fs";
 import { env } from "../../config/env.js";
 import type { TranscriptionProvider, TranscriptionResult } from "../types.js";

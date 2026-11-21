@@ -1,6 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
@@ -27,6 +24,7 @@ import { askCallAnalytics } from "../services/ask-analytics.service.js";
 import { recordToolAudit } from "../services/audit.service.js";
 import { generateFullDailyReport } from "../services/report.service.js";
 import { syncCallsWindow, upsertNormalizedCall } from "../services/sync.service.js";
+import { DASHBOARD_HTML } from "../ui/dashboard-html.js";
 import { getTodayYmd, validateDateRange } from "../utils/dates.js";
 import { AppError, UnauthorizedError } from "../utils/errors.js";
 import { logger } from "../utils/logger.js";
@@ -68,17 +66,7 @@ export function buildApp() {
 
   // Operations Dashboard UI (served at /)
   app.get("/", async (_req, reply) => {
-    const currentDir = path.dirname(fileURLToPath(import.meta.url));
-    const candidates = [
-      path.resolve(currentDir, "../ui/dashboard.html"),
-      path.resolve(process.cwd(), "src/ui/dashboard.html"),
-    ];
-    const htmlPath = candidates.find((p) => fs.existsSync(p));
-    if (!htmlPath) {
-      return reply.status(404).send({ error: "Dashboard UI not found" });
-    }
-    const html = fs.readFileSync(htmlPath, "utf8");
-    return reply.type("text/html; charset=utf-8").send(html);
+    return reply.type("text/html; charset=utf-8").send(DASHBOARD_HTML);
   });
 
   // Health & readiness
