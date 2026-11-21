@@ -1,0 +1,48 @@
+{
+  "name": "smartflow-intelligence-mcp",
+  "version": "1.0.0",
+  "description": "SmartFlow Intelligence MCP — Call-center analytics, transcription, AI conversation analysis, and read-only MCP server",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "mcp:stdio": "MCP_STDIO=true tsx src/mcp-stdio.ts",
+    "mcp:stdio:prod": "MCP_STDIO=true node dist/mcp-stdio.js",
+    "worker": "tsx src/queue/run-workers.ts",
+    "sync:calls": "tsx src/cli/sync-calls.ts",
+    "process:call": "tsx src/cli/process-call.ts",
+    "process:pending": "tsx src/cli/process-pending.ts",
+    "enqueue:pending": "tsx src/cli/enqueue-pending.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@google/genai": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "bullmq": "^5.40.0",
+    "dotenv": "^16.4.7",
+    "drizzle-orm": "^0.41.0",
+    "fastify": "^5.2.1",
+    "groq-sdk": "^0.15.0",
+    "ioredis": "^5.6.0",
+    "openai": "^4.90.0",
+    "pg": "^8.14.1",
+    "pino": "^9.6.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "@types/pg": "^8.11.11",
+    "drizzle-kit": "^0.30.6",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.9"
+  }
+}
+

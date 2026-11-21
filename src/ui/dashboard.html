@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartFlow Intelligence — Operations Dashboard</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --surface: #121a2f;
+      --surface-2: #18233f;
+      --border: #253357;
+      --text: #e6ecf8;
+      --muted: #93a4c7;
+      --accent: #4f8cff;
+      --accent-hover: #3b78f0;
+      --green: #22c55e;
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --purple: #a855f7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(11, 16, 32, 0.9);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 1.05rem;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 10px var(--green);
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+    input, select, button {
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 0.875rem;
+    }
+    button {
+      cursor: pointer;
+      font-weight: 500;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    button:hover { border-color: var(--accent); }
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    button.primary:hover { background: var(--accent-hover); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    main {
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 20px 24px 60px;
+    }
+    .banner {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 16px;
+      margin-bottom: 18px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 0.875rem;
+      color: var(--muted);
+    }
+    .banner.error { border-color: var(--red); color: #fecaca; background: rgba(239, 68, 68, 0.12); }
+
+    .grid-kpi {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 18px;
+    }
+    .kpi-label { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .kpi-value { font-size: 1.75rem; font-weight: 700; margin-top: 4px; }
+    .kpi-sub { font-size: 0.8rem; color: var(--muted); margin-top: 4px; }
+
+    .progress {
+      width: 100%;
+      height: 7px;
+      background: var(--surface-2);
+      border-radius: 99px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .progress > div {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--green));
+      transition: width 0.3s ease;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 960px) { .grid-2 { grid-template-columns: 1fr; } }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: 1rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .muted { color: var(--muted); font-size: 0.82rem; font-weight: 400; }
+
+    .queue-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+    @media (max-width: 640px) { .queue-grid { grid-template-columns: repeat(2, 1fr); } }
+    .q-box {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 0.8rem;
+    }
+    .q-title { font-weight: 600; text-transform: capitalize; margin-bottom: 4px; }
+    .q-nums { color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 10px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    tbody tr:hover { background: rgba(79, 140, 255, 0.07); }
+    tr.clickable { cursor: pointer; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 0.74rem;
+      font-weight: 600;
+      text-transform: capitalize;
+    }
+    .badge.green { background: rgba(34, 197, 94, 0.18); color: #86efac; }
+    .badge.amber { background: rgba(245, 158, 11, 0.18); color: #fcd34d; }
+    .badge.red { background: rgba(239, 68, 68, 0.18); color: #fca5a5; }
+    .badge.blue { background: rgba(79, 140, 255, 0.18); color: #93c5fd; }
+    .badge.gray { background: rgba(147, 164, 199, 0.18); color: #cbd5e1; }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(4, 8, 18, 0.75);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 50;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      max-width: 760px;
+      width: 100%;
+      max-height: 86vh;
+      overflow-y: auto;
+      padding: 20px 24px;
+    }
+    pre.transcript-box {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      white-space: pre-wrap;
+      font-size: 0.84rem;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+    .auth-box {
+      max-width: 440px;
+      margin: 80px auto;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+    }
+    .auth-box input { width: 100%; margin: 12px 0; }
+    .auth-box button { width: 100%; }
+
+    /* Floating AI Bot Widget */
+    .bot-fab {
+      position: fixed;
+      right: 24px;
+      bottom: 24px;
+      z-index: 60;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 18px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, var(--accent), var(--purple));
+      border: none;
+      color: #fff;
+      font-weight: 600;
+      font-size: 0.9rem;
+      box-shadow: 0 10px 30px rgba(79, 140, 255, 0.38);
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .bot-fab:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 14px 34px rgba(79, 140, 255, 0.5);
+    }
+    .bot-panel {
+      position: fixed;
+      right: 24px;
+      bottom: 24px;
+      z-index: 65;
+      width: 400px;
+      max-width: calc(100vw - 32px);
+      height: 520px;
+      max-height: calc(100vh - 48px);
+      background: var(--surface);
+      border: 1px solid rgba(79, 140, 255, 0.45);
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+      transition: width 0.25s ease, height 0.25s ease;
+    }
+    .bot-panel.open { display: flex; }
+    .bot-panel.expanded {
+      width: 660px;
+      height: 78vh;
+    }
+    .bot-header {
+      padding: 12px 16px;
+      background: linear-gradient(135deg, rgba(79, 140, 255, 0.16), rgba(168, 85, 247, 0.14));
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .bot-header-title {
+      font-weight: 700;
+      font-size: 0.94rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .bot-header-actions { display: flex; gap: 6px; }
+    .bot-header-actions button { padding: 4px 9px; font-size: 0.76rem; }
+    .bot-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 12px 14px;
+      overflow: hidden;
+    }
+    .bot-messages {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+    .bot-msg {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 0.85rem;
+    }
+    .bot-msg.user {
+      background: rgba(79, 140, 255, 0.18);
+      border-color: rgba(79, 140, 255, 0.45);
+      align-self: flex-end;
+      max-width: 82%;
+    }
+    .bot-headline { font-weight: 700; font-size: 0.92rem; margin-bottom: 5px; color: #fff; }
+    .bot-points { margin: 6px 0 4px; padding-left: 18px; }
+    .bot-points li { margin-bottom: 3px; }
+    .bot-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; font-size: 0.72rem; color: var(--muted); }
+    .bot-chips-wrap {
+      padding: 8px 14px 4px;
+      border-top: 1px solid var(--border);
+      background: rgba(11, 16, 32, 0.4);
+    }
+    .bot-chips-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      margin-bottom: 5px;
+    }
+    .bot-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .chip {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 99px;
+      padding: 4px 10px;
+      font-size: 0.75rem;
+      color: var(--muted);
+      cursor: pointer;
+      max-width: 100%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .chip:hover { color: var(--text); border-color: var(--accent); }
+    .chip.frequent {
+      border-color: rgba(245, 158, 11, 0.55);
+      background: rgba(245, 158, 11, 0.12);
+      color: #fde68a;
+    }
+    .bot-footer {
+      padding: 10px 14px 12px;
+      display: flex;
+      gap: 8px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+    }
+    .bot-footer input { flex: 1; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="dot"></span>
+      <span>SmartFlow Intelligence</span>
+    </div>
+    <div class="controls">
+      <input type="date" id="datePicker" />
+      <button id="refreshBtn" class="primary">Refresh</button>
+      <button id="syncBtn">Sync Day</button>
+      <button id="enqueueBtn">Process Pending (All)</button>
+      <button id="keyBtn" title="Change API Key">API Key</button>
+    </div>
+  </header>
+
+  <main id="appRoot">
+    <div id="authScreen" class="auth-box" style="display:none;">
+      <h2 style="margin-bottom:6px;">Connect to SmartFlow API</h2>
+      <div class="muted">Enter your <code>MCP_API_KEY</code> from <code>.env</code>. It is stored only in your browser's localStorage.</div>
+      <input type="password" id="apiKeyInput" placeholder="Paste MCP_API_KEY..." />
+      <button id="saveKeyBtn" class="primary">Unlock Dashboard</button>
+    </div>
+
+    <div id="dashboardContent" style="display:none;">
+      <div id="statusBanner" class="banner">
+        <span id="statusText">Loading SmartFlow analytics...</span>
+        <span id="providerText"></span>
+      </div>
+
+      <section class="grid-kpi">
+        <div class="card">
+          <div class="kpi-label">Total Calls</div>
+          <div class="kpi-value" id="kpiTotal">—</div>
+          <div class="kpi-sub" id="kpiUnique">Unique leads: —</div>
+        </div>
+        <div class="card">
+          <div class="kpi-label">Answered</div>
+          <div class="kpi-value" id="kpiAnswered" style="color:var(--green)">—</div>
+          <div class="kpi-sub" id="kpiConnRate">Connection rate: —</div>
+        </div>
+        <div class="card">
+          <div class="kpi-label">Missed / Failed</div>
+          <div class="kpi-value" id="kpiMissed" style="color:var(--amber)">—</div>
+          <div class="kpi-sub" id="kpiAvgTalk">Avg talk time: —</div>
+        </div>
+        <div class="card">
+          <div class="kpi-label">Follow-ups Pending</div>
+          <div class="kpi-value" id="kpiFollowups">—</div>
+          <div class="kpi-sub" id="kpiHot">Interested / Hot: —</div>
+        </div>
+        <div class="card">
+          <div class="kpi-label">Analysis Coverage</div>
+          <div class="kpi-value" id="kpiCoverage">—%</div>
+          <div class="progress"><div id="coverageBar" style="width:0%"></div></div>
+          <div class="kpi-sub" id="kpiCoverageSub">— / — answered calls</div>
+        </div>
+      </section>
+
+      <section class="card" style="margin-bottom:20px;">
+        <h2>
+          <span>Background Queues (Redis + BullMQ)</span>
+          <span class="muted" id="lastSyncText">Last sync: —</span>
+        </h2>
+        <div class="queue-grid" id="queueGrid"></div>
+      </section>
+
+      <section class="grid-2">
+        <div class="card">
+          <h2>
+            <span>Telecaller Performance</span>
+            <span class="muted">Deterministic SQL + Advisory QA</span>
+          </h2>
+          <div style="overflow-x:auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Agent</th>
+                  <th>Calls</th>
+                  <th>Connected</th>
+                  <th>Rate</th>
+                  <th>Leads</th>
+                  <th>Avg Talk</th>
+                  <th>QA</th>
+                </tr>
+              </thead>
+              <tbody id="agentsBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>
+            <span>Conversion Funnel &amp; Signals</span>
+            <span class="muted">Unique leads</span>
+          </h2>
+          <div id="funnelBox" class="muted">Loading...</div>
+          <hr style="border:none;border-top:1px solid var(--border);margin:16px 0;" />
+          <div style="font-size:0.8rem;color:var(--muted);">
+            Actual conversions are tracked strictly from authoritative CRM/business stage transitions — never from LLM probability estimates.
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>
+          <span>Calls Explorer</span>
+          <div class="controls">
+            <select id="departmentFilter">
+              <option value="">All branches</option>
+            </select>
+            <select id="statusFilter">
+              <option value="">All statuses</option>
+              <option value="answered">Answered</option>
+              <option value="missed">Missed</option>
+              <option value="failed">Failed</option>
+            </select>
+            <input type="text" id="searchInput" placeholder="Search transcript / disposition..." />
+            <button id="searchBtn">Search</button>
+          </div>
+        </h2>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Time (IST)</th>
+                <th>Branch</th>
+                <th>Agent</th>
+                <th>Lead</th>
+                <th>Dir</th>
+                <th>Status</th>
+                <th>Talk</th>
+                <th>Outcome</th>
+                <th>Temp</th>
+                <th>QA</th>
+              </tr>
+            </thead>
+            <tbody id="callsBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <div id="callModal" class="modal-backdrop">
+    <div class="modal">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h2 style="margin:0;">Call Intelligence Detail</h2>
+        <button id="closeModalBtn">Close</button>
+      </div>
+      <div id="modalBody" class="muted">Loading...</div>
+    </div>
+  </div>
+
+  <!-- Floating AI Assistant Bot (Bottom Right) -->
+  <button id="botFab" class="bot-fab" title="Open SmartFlow AI Assistant">
+    <span>✦</span>
+    <span>Ask SmartFlow AI</span>
+  </button>
+
+  <div id="botPanel" class="bot-panel">
+    <div class="bot-header">
+      <div class="bot-header-title">
+        <span style="color:#93c5fd;">✦</span>
+        <span>SmartFlow AI Assistant</span>
+      </div>
+      <div class="bot-header-actions">
+        <button id="botExpandBtn" title="Expand / Compact">Expand</button>
+        <button id="botCloseBtn" title="Close">✕</button>
+      </div>
+    </div>
+    <div class="bot-body">
+      <div id="botMessages" class="bot-messages">
+        <div class="bot-msg muted">
+          Ask any question about calls, branches, telecallers, follow-ups, or objections. Answers are backed by deterministic MCP SQL tools.
+        </div>
+      </div>
+    </div>
+    <div class="bot-chips-wrap">
+      <div id="frequentWrap" style="display:none;margin-bottom:8px;">
+        <div class="bot-chips-label">★ Frequently Asked</div>
+        <div id="frequentChips" class="bot-chips"></div>
+      </div>
+      <div class="bot-chips-label">Quick Questions</div>
+      <div id="starterChips" class="bot-chips">
+        <button class="chip" data-q="Give me a simple breakdown of today's call performance by branch">Branch breakdown</button>
+        <button class="chip" data-q="Which telecaller handled the most unique leads and highest connection rate today?">Top telecaller</button>
+        <button class="chip" data-q="What follow-ups are pending or missed opportunities today?">Pending follow-ups</button>
+        <button class="chip" data-q="What are the common customer objections and calls needing review?">Objections &amp; QA</button>
+      </div>
+    </div>
+    <div class="bot-footer">
+      <input type="text" id="botInput" placeholder="Ask about calls, branches, agents..." />
+      <button id="botAskBtn" class="primary">Ask</button>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = "smartflow_mcp_api_key";
+
+    function getApiKey() {
+      return localStorage.getItem(STORAGE_KEY) || "";
+    }
+
+    function todayIstYmd() {
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(new Date());
+      const g = (t) => parts.find((p) => p.type === t)?.value || "00";
+      return `${g("year")}-${g("month")}-${g("day")}`;
+    }
+
+    async function apiFetch(path, options = {}) {
+      const headers = {
+        "Content-Type": "application/json",
+        ...(getApiKey() ? { Authorization: `Bearer ${getApiKey()}` } : {}),
+        ...(options.headers || {}),
+      };
+      const res = await fetch(path, { ...options, headers });
+      if (res.status === 401) {
+        showAuthScreen("Unauthorized — please enter your valid MCP_API_KEY.");
+        throw new Error("Unauthorized");
+      }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      return res.json();
+    }
+
+    function showAuthScreen(msg) {
+      document.getElementById("authScreen").style.display = "block";
+      document.getElementById("dashboardContent").style.display = "none";
+      if (msg) setBanner(msg, true);
+    }
+
+    function showDashboard() {
+      document.getElementById("authScreen").style.display = "none";
+      document.getElementById("dashboardContent").style.display = "block";
+    }
+
+    function setBanner(text, isError = false) {
+      const el = document.getElementById("statusBanner");
+      el.className = isError ? "banner error" : "banner";
+      document.getElementById("statusText").textContent = text;
+    }
+
+    function fmtSeconds(sec) {
+      if (sec == null) return "—";
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      return m > 0 ? `${m}m ${s}s` : `${s}s`;
+    }
+
+    function fmtIstTime(iso) {
+      return new Intl.DateTimeFormat("en-IN", {
+        timeZone: "Asia/Kolkata",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+      }).format(new Date(iso));
+    }
+
+    function statusBadge(status) {
+      const map = { answered: "green", missed: "amber", failed: "red" };
+      return `<span class="badge ${map[status] || "gray"}">${status || "—"}</span>`;
+    }
+
+    function tempBadge(temp) {
+      if (!temp) return `<span class="muted">—</span>`;
+      const map = { hot: "red", warm: "amber", cold: "blue" };
+      return `<span class="badge ${map[temp] || "gray"}">${temp}</span>`;
+    }
+
+    function getSelectedDayRange(dateYmd) {
+      return {
+        from: `${dateYmd}T00:00:00+05:30`,
+        to: `${dateYmd}T23:59:59+05:30`,
+      };
+    }
+
+    async function loadDashboard() {
+      const dateYmd = document.getElementById("datePicker").value || todayIstYmd();
+      const { from, to } = getSelectedDayRange(dateYmd);
+      const department = document.getElementById("departmentFilter").value;
+      const status = document.getElementById("statusFilter").value;
+      const searchText = document.getElementById("searchInput").value.trim();
+
+      setBanner(`Refreshing data for ${dateYmd} (Asia/Kolkata)...`);
+      try {
+        const callParams = new URLSearchParams({ from, to, limit: "50" });
+        if (department) callParams.set("department", department);
+        if (status) callParams.set("status", status);
+        if (searchText) callParams.set("searchText", searchText);
+
+        const [daily, agents, funnel, calls, departmentsRes, queues, providers] = await Promise.all([
+          apiFetch(`/api/v1/reports/daily?date=${encodeURIComponent(dateYmd)}`),
+          apiFetch(`/api/v1/reports/agents?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
+          apiFetch(`/api/v1/reports/conversions?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
+          apiFetch(`/api/v1/calls?${callParams.toString()}`),
+          apiFetch(`/api/v1/departments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
+          apiFetch(`/api/v1/queues/status`),
+          apiFetch(`/api/v1/providers`),
+        ]);
+
+        showDashboard();
+
+        // Populate branch/department filter while preserving current selection
+        const deptSelect = document.getElementById("departmentFilter");
+        const prevDept = deptSelect.value;
+        deptSelect.innerHTML =
+          `<option value="">All branches</option>` +
+          (departmentsRes.departments || [])
+            .map((d) => `<option value="${escapeHtml(d.value)}">${escapeHtml(d.label)} (${d.callCount})</option>`)
+            .join("");
+        deptSelect.value = prevDept;
+
+        // KPIs
+        const act = daily.callActivity;
+        const comp = daily.completeness;
+        const sig = daily.leadSignals;
+
+        document.getElementById("kpiTotal").textContent = act.totalCalls;
+        document.getElementById("kpiUnique").textContent = `Unique leads: ${act.uniqueLeads}`;
+        document.getElementById("kpiAnswered").textContent = act.answeredCalls;
+        document.getElementById("kpiConnRate").textContent = `Connection rate: ${act.connectionRatePct}%`;
+        document.getElementById("kpiMissed").textContent = `${act.missedCalls} / ${act.failedCalls}`;
+        document.getElementById("kpiAvgTalk").textContent = `Avg talk: ${fmtSeconds(act.avgTalkDurationSeconds)}`;
+        document.getElementById("kpiFollowups").textContent = sig.pendingFollowups;
+        document.getElementById("kpiHot").textContent = `Interested: ${sig.interestedCalls} · Hot: ${sig.hotLeadCalls}`;
+        document.getElementById("kpiCoverage").textContent = `${comp.analysisCompletenessPct}%`;
+        document.getElementById("coverageBar").style.width = `${comp.analysisCompletenessPct}%`;
+        document.getElementById("kpiCoverageSub").textContent = `${comp.withAnalysis} / ${comp.answeredCalls} answered analyzed`;
+        document.getElementById("lastSyncText").textContent = comp.lastSyncAt
+          ? `Last sync (${comp.lastSyncStatus}): ${new Date(comp.lastSyncAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST`
+          : "Never synced";
+
+        document.getElementById("providerText").textContent =
+          `STT: ${providers.transcription.provider}/${providers.transcription.model} · LLM: ${providers.analysis.provider}/${providers.analysis.model}`;
+
+        // Queues
+        const qGrid = document.getElementById("queueGrid");
+        qGrid.innerHTML = Object.entries(queues)
+          .map(
+            ([name, c]) => `
+            <div class="q-box">
+              <div class="q-title">${name}</div>
+              <div class="q-nums">
+                <span>wait: <b>${c.waiting ?? 0}</b></span>
+                <span>active: <b style="color:var(--accent)">${c.active ?? 0}</b></span>
+                <span>done: <b style="color:var(--green)">${c.completed ?? 0}</b></span>
+                <span>fail: <b style="color:${(c.failed ?? 0) > 0 ? "var(--red)" : "inherit"}">${c.failed ?? 0}</b></span>
+              </div>
+            </div>`
+          )
+          .join("");
+
+        // Agents table
+        document.getElementById("agentsBody").innerHTML = agents.agents.length
+          ? agents.agents
+              .map(
+                (a) => `
+              <tr>
+                <td><b>${escapeHtml(a.name)}</b></td>
+                <td>${a.totalCalls}</td>
+                <td>${a.connectedCalls}</td>
+                <td>${a.connectionRatePct}%</td>
+                <td>${a.uniqueLeads}</td>
+                <td>${fmtSeconds(a.avgTalkDurationSeconds)}</td>
+                <td>${a.avgQualityScore != null ? `<span class="badge blue">${a.avgQualityScore}/100</span>` : `<span class="muted">—</span>`}</td>
+              </tr>`
+              )
+              .join("")
+          : `<tr><td colspan="7" class="muted">No agent activity for this date.</td></tr>`;
+
+        // Funnel
+        const reach = funnel.leadReach;
+        const stagesHtml = (funnel.stages || [])
+          .map((s) => `<div style="display:flex;justify-content:space-between;padding:4px 0;"><span>${escapeHtml(s.stage)}</span><b>${s.leadCount}</b></div>`)
+          .join("");
+        document.getElementById("funnelBox").innerHTML = `
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+            <span>Attempted unique leads</span><b>${reach.attemptedUniqueLeads}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+            <span>Connected unique leads</span><b>${reach.connectedUniqueLeads} (${reach.leadContactRatePct}%)</b>
+          </div>
+          <div style="margin-top:12px;font-weight:600;color:var(--text);">Lead Stages (Cohort)</div>
+          ${stagesHtml || '<div class="muted">No lead stages recorded in this window.</div>'}
+        `;
+
+        // Calls table
+        document.getElementById("callsBody").innerHTML = calls.calls.length
+          ? calls.calls
+              .map(
+                (c) => `
+              <tr class="clickable" data-call-id="${c.callId}">
+                <td>${fmtIstTime(c.startedAt)}</td>
+                <td>${c.department ? `<span class="badge gray">${escapeHtml(c.department)}</span>` : `<span class="muted">—</span>`}</td>
+                <td>${escapeHtml(c.agentName)}</td>
+                <td>${c.leadName ? `<b>${escapeHtml(c.leadName)}</b> <code class="muted">${escapeHtml(c.leadPhoneMasked)}</code>` : `<code>${escapeHtml(c.leadPhoneMasked)}</code>`}</td>
+                <td>${escapeHtml(c.direction || "—")}</td>
+                <td>${statusBadge(c.status)}</td>
+                <td>${fmtSeconds(c.answeredSeconds ?? c.durationSeconds)}</td>
+                <td>${c.callOutcome ? escapeHtml(c.callOutcome.replaceAll("_", " ")) : `<span class="muted">—</span>`}</td>
+                <td>${tempBadge(c.leadTemperature)}</td>
+                <td>${c.qualityScore != null ? `<b>${c.qualityScore}</b>` : `<span class="muted">—</span>`}</td>
+              </tr>`
+              )
+              .join("")
+          : `<tr><td colspan="10" class="muted">No calls match your filter.</td></tr>`;
+
+        document.querySelectorAll("#callsBody tr[data-call-id]").forEach((row) => {
+          row.addEventListener("click", () => openCallModal(row.dataset.callId));
+        });
+
+        setBanner(`Showing ${dateYmd} (Asia/Kolkata) · ${act.totalCalls} calls · ${comp.analysisCompletenessPct}% analyzed`);
+      } catch (err) {
+        if (err.message !== "Unauthorized") {
+          setBanner(`Error: ${err.message}`, true);
+        }
+      }
+    }
+
+    async function openCallModal(callId) {
+      const modal = document.getElementById("callModal");
+      const body = document.getElementById("modalBody");
+      modal.classList.add("open");
+      body.innerHTML = "Loading call details...";
+
+      try {
+        const detail = await apiFetch(`/api/v1/calls/${callId}`);
+        const c = detail.call;
+        const a = detail.latestAnalysis;
+        const aj = a?.analysisJson || null;
+
+        let html = `
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:14px;color:var(--text);font-size:0.86rem;">
+            <div><span class="muted">Agent:</span> <b>${escapeHtml(c.agentName)}</b></div>
+            <div><span class="muted">Lead:</span> <code>${escapeHtml(c.leadPhoneMasked)}</code></div>
+            <div><span class="muted">Status:</span> ${statusBadge(c.status)} (${escapeHtml(c.direction || "—")})</div>
+            <div><span class="muted">Talk / Total:</span> ${fmtSeconds(c.answeredSeconds)} / ${fmtSeconds(c.durationSeconds)}</div>
+          </div>
+        `;
+
+        if (aj) {
+          html += `
+            <div style="background:var(--surface-2);padding:12px;border-radius:8px;margin-bottom:14px;color:var(--text);">
+              <div style="font-weight:600;margin-bottom:6px;">AI Summary (${a.provider}/${a.model})</div>
+              <div style="font-size:0.88rem;">${escapeHtml(aj.summary || "")}</div>
+              <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px;">
+                <span class="badge blue">Intent: ${escapeHtml(a.intent)}</span>
+                <span class="badge amber">Outcome: ${escapeHtml(a.callOutcome)}</span>
+                <span class="badge green">QA Score: ${a.qualityScore}/100</span>
+                <span class="badge gray">Est. Prob (non-CRM): ${a.conversionProbability}%</span>
+              </div>
+              ${aj.uncertaintyNotes ? `<div style="margin-top:8px;font-size:0.8rem;color:#fcd34d;">Note: ${escapeHtml(aj.uncertaintyNotes)}</div>` : ""}
+            </div>
+          `;
+          if (Array.isArray(aj.objections) && aj.objections.length) {
+            html += `<div style="margin-bottom:12px;"><b style="color:var(--text);">Objections</b><ul>${aj.objections
+              .map((o) => `<li><b>${escapeHtml(o.category)}:</b> ${escapeHtml(o.description)} <i>"${escapeHtml(o.evidence)}"</i></li>`)
+              .join("")}</ul></div>`;
+          }
+        } else {
+          html += `<div style="margin-bottom:14px;">No AI analysis yet. <button id="analyzeNowBtn" class="primary">Transcribe &amp; Analyze Now</button></div>`;
+        }
+
+        html += `
+          <div style="margin-top:12px;">
+            <button id="loadTranscriptBtn">Load Protected Transcript (Audit Logged)</button>
+            <div id="transcriptContainer" style="margin-top:10px;"></div>
+          </div>
+        `;
+        body.innerHTML = html;
+
+        const analyzeBtn = document.getElementById("analyzeNowBtn");
+        if (analyzeBtn) {
+          analyzeBtn.addEventListener("click", async () => {
+            analyzeBtn.disabled = true;
+            analyzeBtn.textContent = "Processing...";
+            try {
+              await apiFetch(`/api/v1/calls/${callId}/analyze`, { method: "POST" });
+              await openCallModal(callId);
+              loadDashboard();
+            } catch (e) {
+              analyzeBtn.textContent = `Error: ${e.message}`;
+            }
+          });
+        }
+
+        document.getElementById("loadTranscriptBtn").addEventListener("click", async (ev) => {
+          const btn = ev.target;
+          btn.disabled = true;
+          btn.textContent = "Loading...";
+          try {
+            const tr = await apiFetch(`/api/v1/calls/${callId}/transcript`);
+            document.getElementById("transcriptContainer").innerHTML = `
+              <div class="muted" style="margin-bottom:4px;">Language: ${escapeHtml(tr.language || "unknown")} · Quality: ${escapeHtml(tr.qualityFlag || "ok")}</div>
+              <pre class="transcript-box">${escapeHtml(tr.content || "(empty)")}</pre>
+            `;
+            btn.style.display = "none";
+          } catch (e) {
+            btn.textContent = `Unavailable: ${e.message}`;
+          }
+        });
+      } catch (err) {
+        body.innerHTML = `<div style="color:#fca5a5;">Failed to load call: ${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    function escapeHtml(str) {
+      return String(str ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    // Wire events
+    document.getElementById("datePicker").value = todayIstYmd();
+    document.getElementById("refreshBtn").addEventListener("click", loadDashboard);
+    document.getElementById("searchBtn").addEventListener("click", loadDashboard);
+    document.getElementById("departmentFilter").addEventListener("change", loadDashboard);
+    document.getElementById("statusFilter").addEventListener("change", loadDashboard);
+    document.getElementById("closeModalBtn").addEventListener("click", () => {
+      document.getElementById("callModal").classList.remove("open");
+    });
+    document.getElementById("keyBtn").addEventListener("click", () => {
+      document.getElementById("apiKeyInput").value = getApiKey();
+      showAuthScreen();
+    });
+    document.getElementById("saveKeyBtn").addEventListener("click", () => {
+      const val = document.getElementById("apiKeyInput").value.trim();
+      localStorage.setItem(STORAGE_KEY, val);
+      loadDashboard();
+    });
+
+    document.getElementById("syncBtn").addEventListener("click", async (ev) => {
+      const btn = ev.target;
+      const dateYmd = document.getElementById("datePicker").value || todayIstYmd();
+      const { from, to } = getSelectedDayRange(dateYmd);
+      btn.disabled = true;
+      btn.textContent = "Syncing...";
+      try {
+        const res = await apiFetch("/api/v1/sync/calls", {
+          method: "POST",
+          body: JSON.stringify({ from, to }),
+        });
+        setBanner(`Synced ${res.callsFetched} calls (${res.newCalls} new, ${res.updatedCalls} updated).`);
+        await loadDashboard();
+      } catch (e) {
+        setBanner(`Sync failed: ${e.message}`, true);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Sync Day";
+      }
+    });
+
+    document.getElementById("enqueueBtn").addEventListener("click", async (ev) => {
+      const btn = ev.target;
+      btn.disabled = true;
+      btn.textContent = "Enqueueing...";
+      try {
+        const res = await apiFetch("/api/v1/queues/enqueue-pending", {
+          method: "POST",
+          body: JSON.stringify({ limit: 50 }),
+        });
+        setBanner(`Enqueued ${res.enqueued} pending answered calls to BullMQ worker.`);
+        await loadDashboard();
+      } catch (e) {
+        setBanner(`Enqueue failed: ${e.message}`, true);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Process Pending (All)";
+      }
+    });
+
+    // Floating Bot open / close / auto-expand + Frequent Question Badges
+    const FAQ_STORAGE_KEY = "smartflow_faq_counts";
+    const botFab = document.getElementById("botFab");
+    const botPanel = document.getElementById("botPanel");
+    const botExpandBtn = document.getElementById("botExpandBtn");
+
+    function setBotExpanded(expanded) {
+      botPanel.classList.toggle("expanded", expanded);
+      botExpandBtn.textContent = expanded ? "Compact" : "Expand";
+    }
+
+    botFab.addEventListener("click", () => {
+      botPanel.classList.add("open");
+      botFab.style.display = "none";
+      document.getElementById("botInput").focus();
+    });
+    document.getElementById("botCloseBtn").addEventListener("click", () => {
+      botPanel.classList.remove("open");
+      botFab.style.display = "flex";
+    });
+    botExpandBtn.addEventListener("click", () => {
+      setBotExpanded(!botPanel.classList.contains("expanded"));
+    });
+
+    function loadFaqMap() {
+      try {
+        return JSON.parse(localStorage.getItem(FAQ_STORAGE_KEY) || "{}");
+      } catch {
+        return {};
+      }
+    }
+
+    function recordFrequentQuestion(q) {
+      const normalized = q.trim();
+      if (!normalized) return;
+      const map = loadFaqMap();
+      map[normalized] = (map[normalized] || 0) + 1;
+      localStorage.setItem(FAQ_STORAGE_KEY, JSON.stringify(map));
+      renderFrequentBadges();
+    }
+
+    function renderFrequentBadges() {
+      const map = loadFaqMap();
+      const frequent = Object.entries(map)
+        .filter(([, count]) => count >= 2)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6);
+
+      const wrap = document.getElementById("frequentWrap");
+      const container = document.getElementById("frequentChips");
+      if (!frequent.length) {
+        wrap.style.display = "none";
+        return;
+      }
+      wrap.style.display = "block";
+      container.innerHTML = frequent
+        .map(([text, count]) => {
+          const shortLabel = text.length > 36 ? text.slice(0, 35) + "…" : text;
+          return `<button class="chip frequent" data-q="${escapeHtml(text)}" title="${escapeHtml(text)}">★ ${escapeHtml(shortLabel)} (${count}×)</button>`;
+        })
+        .join("");
+
+      container.querySelectorAll(".chip[data-q]").forEach((chip) => {
+        chip.addEventListener("click", () => askBot(chip.dataset.q));
+      });
+    }
+
+    async function askBot(questionText) {
+      const input = document.getElementById("botInput");
+      const btn = document.getElementById("botAskBtn");
+      const box = document.getElementById("botMessages");
+      const q = (questionText ?? input.value).trim();
+      if (!q) return;
+
+      // Auto-expand chat panel when user chats
+      botPanel.classList.add("open");
+      botFab.style.display = "none";
+      setBotExpanded(true);
+      recordFrequentQuestion(q);
+
+      input.value = "";
+      btn.disabled = true;
+      btn.textContent = "Thinking...";
+
+      const userDiv = document.createElement("div");
+      userDiv.className = "bot-msg user";
+      userDiv.textContent = q;
+      box.appendChild(userDiv);
+
+      const loadingDiv = document.createElement("div");
+      loadingDiv.className = "bot-msg muted";
+      loadingDiv.textContent = "Running approved SQL analytics tools & synthesizing answer...";
+      box.appendChild(loadingDiv);
+      box.scrollTop = box.scrollHeight;
+
+      try {
+        const dateYmd = document.getElementById("datePicker").value || todayIstYmd();
+        const res = await apiFetch("/api/v1/ask", {
+          method: "POST",
+          body: JSON.stringify({ question: q, date: dateYmd, timezone: "Asia/Kolkata" }),
+        });
+
+        const pointsHtml = (res.keyPoints || [])
+          .map((p) => `<li>${escapeHtml(p)}</li>`)
+          .join("");
+        const caveatsHtml = (res.caveats || []).length
+          ? `<div style="margin-top:8px;font-size:0.78rem;color:#fcd34d;">Caveat: ${res.caveats.map(escapeHtml).join(" · ")}</div>`
+          : "";
+        const toolsHtml = (res.toolsUsed || [])
+          .map((t) => `<span class="badge blue">${escapeHtml(t)}</span>`)
+          .join("");
+
+        loadingDiv.className = "bot-msg";
+        loadingDiv.innerHTML = `
+          <div class="bot-headline">${escapeHtml(res.headline)}</div>
+          <div>${escapeHtml(res.answer)}</div>
+          ${pointsHtml ? `<ul class="bot-points">${pointsHtml}</ul>` : ""}
+          ${caveatsHtml}
+          <div class="bot-meta"><span>Tools used:</span> ${toolsHtml}</div>
+        `;
+      } catch (e) {
+        loadingDiv.className = "bot-msg";
+        loadingDiv.innerHTML = `<span style="color:#fca5a5;">Failed to answer: ${escapeHtml(e.message)}</span>`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Ask";
+        box.scrollTop = box.scrollHeight;
+      }
+    }
+
+    document.getElementById("botAskBtn").addEventListener("click", () => askBot());
+    document.getElementById("botInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") askBot();
+    });
+    document.querySelectorAll("#starterChips .chip[data-q]").forEach((chip) => {
+      chip.addEventListener("click", () => askBot(chip.dataset.q));
+    });
+    renderFrequentBadges();
+
+    // Boot
+    if (!getApiKey()) {
+      showAuthScreen();
+    } else {
+      loadDashboard();
+    }
+  </script>
+</body>
+</html>
+
