@@ -1,3 +1,4 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
 import Fastify from "fastify";
 import { buildApp } from "./api/app.js";
 import { env } from "./config/env.js";
@@ -31,4 +32,7 @@ if (!process.env.VERCEL) {
   process.on("SIGTERM", shutdown);
 }
 
-export default app;
+export default async function handler(req: IncomingMessage, res: ServerResponse) {
+  await app.ready();
+  app.server.emit("request", req, res);
+}
