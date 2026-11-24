@@ -173,6 +173,7 @@ export function buildApp() {
         department: z.string().max(120).optional(),
         status: z.string().optional(),
         outcome: z.string().optional(),
+        hasFollowup: z.enum(["true", "false"]).optional(),
         searchText: z.string().max(200).optional(),
         limit: z.coerce.number().int().min(1).max(100).default(20),
       })
@@ -186,6 +187,7 @@ export function buildApp() {
       department: q.department,
       status: q.status,
       outcome: q.outcome,
+      hasFollowup: q.hasFollowup === "true",
       searchText: q.searchText,
       limit: q.limit,
     });
@@ -268,10 +270,13 @@ export function buildApp() {
   app.get("/api/v1/queues/status", { preHandler: requireApiKey }, async () => {
     if (process.env.VERCEL && !process.env.REDIS_URL) {
       return {
-        sync: { waiting: 0, active: 0, completed: 0, failed: 0 },
-        recording: { waiting: 0, active: 0, completed: 0, failed: 0 },
-        transcription: { waiting: 0, active: 0, completed: 0, failed: 0 },
-        analysis: { waiting: 0, active: 0, completed: 0, failed: 0 },
+        mode: "serverless",
+        queues: {
+          sync: { waiting: 0, active: 0, completed: 0, failed: 0 },
+          recording: { waiting: 0, active: 0, completed: 0, failed: 0 },
+          transcription: { waiting: 0, active: 0, completed: 0, failed: 0 },
+          analysis: { waiting: 0, active: 0, completed: 0, failed: 0 },
+        },
       };
     }
     const { syncQueue, recordingQueue, transcriptionQueue, analysisQueue } = createQueues();
@@ -281,41 +286,55 @@ export function buildApp() {
       transcriptionQueue.getJobCounts(),
       analysisQueue.getJobCounts(),
     ]);
-    return { sync, recording, transcription, analysis };
+    return { mode: "bullmq", queues: { sync, recording, transcription, analysis } };
   });
 
-  // Enqueue pending answered calls (or process inline on Vercel serverless when Redis is absent)
+  // Enqueue pending answered calls (or process inline batch on Vercel serverless when Redis is absent)
   app.post("/api/v1/queues/enqueue-pending", { preHandler: requireApiKey }, async (req) => {
     const tenant = await getOrCreateDefaultTenant();
     const body = z
       .object({ limit: z.number().int().min(1).max(200).default(50) })
       .parse(req.body ?? {});
 
-    const pending = await db
+    const allPending = await db
       .select({ recordingId: recordings.id, callId: calls.id })
       .from(calls)
       .innerJoin(recordings, eq(recordings.callId, calls.id))
       .leftJoin(callAnalyses, eq(callAnalyses.callId, calls.id))
-      .where(and(eq(calls.tenantId, tenant.id), eq(calls.status, "answered"), isNull(callAnalyses.id)))
+      .where(
+        and(
+          eq(calls.tenantId, tenant.id),
+          eq(calls.status, "answered"),
+          sql`${recordings.status} != 'failed'`,
+          isNull(callAnalyses.id)
+        )
+      )
       .orderBy(desc(calls.startedAt))
-      .limit(process.env.VERCEL && !process.env.REDIS_URL ? Math.min(body.limit, 5) : body.limit);
+      .limit(200);
+
+    const batchSize =
+      process.env.VERCEL && !process.env.REDIS_URL ? Math.min(body.limit, 5) : Math.min(body.limit, 50);
+    const batch = allPending.slice(0, batchSize);
 
     if (process.env.VERCEL && !process.env.REDIS_URL) {
       let processed = 0;
-      for (const item of pending) {
+      let failed = 0;
+      for (const item of batch) {
         try {
           await transcribeCallRecording(item.callId);
           await analyzeCallTranscript(item.callId);
           processed += 1;
         } catch (err) {
+          failed += 1;
           logger.warn({ callId: item.callId, err }, "Inline serverless call processing failed");
         }
       }
-      return { enqueued: processed, mode: "inline" };
+      const remaining = Math.max(0, allPending.length - batch.length);
+      return { enqueued: processed, processed, failed, remaining, mode: "inline" };
     }
 
     const { recordingQueue } = createQueues();
-    for (const item of pending) {
+    for (const item of batch) {
       await recordingQueue.add(
         "process-recording",
         { recordingId: item.recordingId, callId: item.callId },
@@ -323,7 +342,13 @@ export function buildApp() {
       );
     }
 
-    return { enqueued: pending.length, mode: "queue" };
+    return {
+      enqueued: batch.length,
+      processed: 0,
+      failed: 0,
+      remaining: Math.max(0, allPending.length - batch.length),
+      mode: "queue",
+    };
   });
 
   // Smartflo webhook receiver (fast 200 OK; Smartflo retries only twice)

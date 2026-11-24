@@ -116,6 +116,55 @@
       border-radius: 12px;
       padding: 16px 18px;
     }
+    .kpi-card {
+      cursor: pointer;
+      transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
+    }
+    .kpi-card:hover {
+      transform: translateY(-2px);
+      border-color: var(--accent);
+    }
+    .kpi-card.active-filter, .agent-card.active-filter, .outcome-row.active-filter {
+      border-color: var(--accent) !important;
+      box-shadow: 0 0 0 2px rgba(79, 140, 255, 0.35);
+    }
+    .agent-card { cursor: pointer; transition: transform 0.12s ease, border-color 0.12s ease; }
+    .agent-card:hover { transform: translateY(-1px); border-color: var(--accent); }
+    .outcome-row {
+      cursor: pointer;
+      padding: 4px 6px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      transition: background 0.12s ease, border-color 0.12s ease;
+    }
+    .outcome-row:hover { background: rgba(79, 140, 255, 0.08); }
+    .active-filter-bar {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      font-size: 0.82rem;
+    }
+    .active-filter-bar.show { display: flex; flex-wrap: wrap; }
+    .filter-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(79, 140, 255, 0.18);
+      border: 1px solid rgba(79, 140, 255, 0.5);
+      color: #bfdbfe;
+      padding: 4px 10px;
+      border-radius: 99px;
+      font-weight: 600;
+    }
+    .filter-pill button {
+      background: transparent;
+      border: none;
+      color: #fff;
+      padding: 0 2px;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
     .kpi-label { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
     .kpi-value { font-size: 1.75rem; font-weight: 700; margin-top: 4px; }
     .kpi-sub { font-size: 0.8rem; color: var(--muted); margin-top: 4px; }
@@ -136,11 +185,65 @@
 
     .grid-2 {
       display: grid;
-      grid-template-columns: 1.4fr 1fr;
+      grid-template-columns: 1.35fr 1fr;
       gap: 16px;
       margin-bottom: 20px;
     }
     @media (max-width: 960px) { .grid-2 { grid-template-columns: 1fr; } }
+
+    /* Compact Color-Coded Telecaller Cards */
+    .agent-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+      gap: 10px;
+      max-height: 320px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+    .agent-card {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--muted);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 0.8rem;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .agent-card.tier-high { border-left-color: var(--green); background: linear-gradient(135deg, rgba(34,197,94,0.08), var(--surface-2)); }
+    .agent-card.tier-mid  { border-left-color: var(--amber); background: linear-gradient(135deg, rgba(245,158,11,0.08), var(--surface-2)); }
+    .agent-card.tier-low  { border-left-color: var(--red);   background: linear-gradient(135deg, rgba(239,68,68,0.08), var(--surface-2)); }
+    .agent-card.tier-idle { border-left-color: #475569; opacity: 0.72; }
+    .agent-top { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+    .agent-name { font-weight: 700; font-size: 0.86rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .agent-stats { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.75rem; }
+    .mini-bar { width: 100%; height: 5px; background: rgba(148,163,184,0.18); border-radius: 99px; overflow: hidden; }
+    .mini-bar > div { height: 100%; border-radius: 99px; }
+
+    /* Outcome Breakdown Chart */
+    .outcome-chart-wrap {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+    .donut-box { position: relative; width: 148px; height: 148px; flex-shrink: 0; }
+    .donut-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+    .donut-total { font-size: 1.4rem; font-weight: 700; line-height: 1.1; }
+    .donut-sub { font-size: 0.7rem; color: var(--muted); }
+    .outcome-legend { flex: 1; min-width: 190px; display: flex; flex-direction: column; gap: 8px; }
+    .outcome-row { display: flex; flex-direction: column; gap: 3px; font-size: 0.8rem; }
+    .outcome-row-top { display: flex; justify-content: space-between; align-items: center; }
+    .outcome-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 6px; }
 
     h2 {
       margin: 0 0 12px;
@@ -418,27 +521,27 @@
       </div>
 
       <section class="grid-kpi">
-        <div class="card">
+        <div class="card kpi-card" id="cardTotal" title="Click to show all calls">
           <div class="kpi-label">Total Calls</div>
           <div class="kpi-value" id="kpiTotal">—</div>
           <div class="kpi-sub" id="kpiUnique">Unique leads: —</div>
         </div>
-        <div class="card">
+        <div class="card kpi-card" id="cardAnswered" title="Click to filter answered calls">
           <div class="kpi-label">Answered</div>
           <div class="kpi-value" id="kpiAnswered" style="color:var(--green)">—</div>
           <div class="kpi-sub" id="kpiConnRate">Connection rate: —</div>
         </div>
-        <div class="card">
+        <div class="card kpi-card" id="cardMissed" title="Click to filter missed calls">
           <div class="kpi-label">Missed / Failed</div>
           <div class="kpi-value" id="kpiMissed" style="color:var(--amber)">—</div>
           <div class="kpi-sub" id="kpiAvgTalk">Avg talk time: —</div>
         </div>
-        <div class="card">
+        <div class="card kpi-card" id="cardFollowups" title="Click to filter calls with pending follow-ups">
           <div class="kpi-label">Follow-ups Pending</div>
           <div class="kpi-value" id="kpiFollowups">—</div>
           <div class="kpi-sub" id="kpiHot">Interested / Hot: —</div>
         </div>
-        <div class="card">
+        <div class="card kpi-card" id="cardCoverage" title="Click to filter answered calls">
           <div class="kpi-label">Analysis Coverage</div>
           <div class="kpi-value" id="kpiCoverage">—%</div>
           <div class="progress"><div id="coverageBar" style="width:0%"></div></div>
@@ -446,7 +549,7 @@
         </div>
       </section>
 
-      <section class="card" style="margin-bottom:20px;">
+      <section id="queueSection" class="card" style="margin-bottom:20px;display:none;">
         <h2>
           <span>Background Queues (Redis + BullMQ)</span>
           <span class="muted" id="lastSyncText">Last sync: —</span>
@@ -458,40 +561,25 @@
         <div class="card">
           <h2>
             <span>Telecaller Performance</span>
-            <span class="muted">Deterministic SQL + Advisory QA</span>
+            <span class="muted">Color-coded by connection rate (🟢 ≥65% · 🟡 40–64% · 🔴 &lt;40%)</span>
           </h2>
-          <div style="overflow-x:auto;">
-            <table>
-              <thead>
-                <tr>
-                  <th>Agent</th>
-                  <th>Calls</th>
-                  <th>Connected</th>
-                  <th>Rate</th>
-                  <th>Leads</th>
-                  <th>Avg Talk</th>
-                  <th>QA</th>
-                </tr>
-              </thead>
-              <tbody id="agentsBody"></tbody>
-            </table>
-          </div>
+          <div id="agentsGrid" class="agent-grid"></div>
         </div>
 
         <div class="card">
           <h2>
-            <span>Conversion Funnel &amp; Signals</span>
-            <span class="muted">Unique leads</span>
+            <span>Call Outcome Breakdown</span>
+            <span class="muted" id="outcomeMeta">Analyzed calls</span>
           </h2>
-          <div id="funnelBox" class="muted">Loading...</div>
-          <hr style="border:none;border-top:1px solid var(--border);margin:16px 0;" />
-          <div style="font-size:0.8rem;color:var(--muted);">
-            Actual conversions are tracked strictly from authoritative CRM/business stage transitions — never from LLM probability estimates.
+          <div id="outcomeChartBox" class="outcome-chart-wrap">
+            <div class="muted">Loading outcome graph...</div>
           </div>
+          <hr style="border:none;border-top:1px solid var(--border);margin:14px 0;" />
+          <div id="funnelBox" class="muted" style="font-size:0.82rem;">Loading funnel...</div>
         </div>
       </section>
 
-      <section class="card">
+      <section id="callsExplorerSection" class="card">
         <h2>
           <span>Calls Explorer</span>
           <div class="controls">
@@ -508,6 +596,7 @@
             <button id="searchBtn">Search</button>
           </div>
         </h2>
+        <div id="activeFilterBar" class="active-filter-bar"></div>
         <div style="overflow-x:auto;">
           <table>
             <thead>
@@ -672,6 +761,73 @@
       };
     }
 
+    // Interactive cross-filter state (click any KPI, Agent card, or Outcome row)
+    const activeCrossFilter = {
+      agentId: "",
+      agentName: "",
+      outcome: "",
+      hasFollowup: false,
+      cardId: "",
+    };
+
+    function clearCrossFilter(reload = true) {
+      activeCrossFilter.agentId = "";
+      activeCrossFilter.agentName = "";
+      activeCrossFilter.outcome = "";
+      activeCrossFilter.hasFollowup = false;
+      activeCrossFilter.cardId = "";
+      document.getElementById("statusFilter").value = "";
+      if (reload) loadDashboard();
+    }
+
+    function renderActiveFilterBar() {
+      const bar = document.getElementById("activeFilterBar");
+      const pills = [];
+      if (activeCrossFilter.agentName) {
+        pills.push(`<span class="filter-pill">Agent: ${escapeHtml(activeCrossFilter.agentName)} <button data-clear="agent">✕</button></span>`);
+      }
+      if (activeCrossFilter.outcome) {
+        pills.push(`<span class="filter-pill">Outcome: ${escapeHtml(activeCrossFilter.outcome.replaceAll("_", " "))} <button data-clear="outcome">✕</button></span>`);
+      }
+      if (activeCrossFilter.hasFollowup) {
+        pills.push(`<span class="filter-pill">Pending Follow-ups <button data-clear="followup">✕</button></span>`);
+      }
+      const statusVal = document.getElementById("statusFilter").value;
+      if (statusVal) {
+        pills.push(`<span class="filter-pill">Status: ${escapeHtml(statusVal)} <button data-clear="status">✕</button></span>`);
+      }
+
+      // Highlight active KPI card
+      document.querySelectorAll(".kpi-card").forEach((el) => el.classList.remove("active-filter"));
+      if (activeCrossFilter.cardId) {
+        document.getElementById(activeCrossFilter.cardId)?.classList.add("active-filter");
+      }
+
+      if (!pills.length) {
+        bar.classList.remove("show");
+        bar.innerHTML = "";
+        return;
+      }
+      bar.classList.add("show");
+      bar.innerHTML = `<span class="muted">Active filter:</span> ${pills.join("")} <button id="clearAllFiltersBtn" style="padding:3px 9px;font-size:0.75rem;">Clear all</button>`;
+
+      bar.querySelectorAll("button[data-clear]").forEach((b) => {
+        b.addEventListener("click", () => {
+          const what = b.dataset.clear;
+          if (what === "agent") { activeCrossFilter.agentId = ""; activeCrossFilter.agentName = ""; }
+          if (what === "outcome") { activeCrossFilter.outcome = ""; }
+          if (what === "followup") { activeCrossFilter.hasFollowup = false; activeCrossFilter.cardId = ""; }
+          if (what === "status") { document.getElementById("statusFilter").value = ""; activeCrossFilter.cardId = ""; }
+          loadDashboard();
+        });
+      });
+      document.getElementById("clearAllFiltersBtn")?.addEventListener("click", () => clearCrossFilter(true));
+    }
+
+    function scrollToExplorer() {
+      document.getElementById("callsExplorerSection")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
     async function loadDashboard() {
       const dateYmd = document.getElementById("datePicker").value || todayIstYmd();
       const { from, to } = getSelectedDayRange(dateYmd);
@@ -679,11 +835,15 @@
       const status = document.getElementById("statusFilter").value;
       const searchText = document.getElementById("searchInput").value.trim();
 
+      renderActiveFilterBar();
       setBanner(`Refreshing data for ${dateYmd} (Asia/Kolkata)...`);
       try {
-        const callParams = new URLSearchParams({ from, to, limit: "50" });
+        const callParams = new URLSearchParams({ from, to, limit: "100" });
         if (department) callParams.set("department", department);
         if (status) callParams.set("status", status);
+        if (activeCrossFilter.agentId) callParams.set("agentId", activeCrossFilter.agentId);
+        if (activeCrossFilter.outcome) callParams.set("outcome", activeCrossFilter.outcome);
+        if (activeCrossFilter.hasFollowup) callParams.set("hasFollowup", "true");
         if (searchText) callParams.set("searchText", searchText);
 
         const [daily, agents, funnel, calls, departmentsRes, queues, providers] = await Promise.all([
@@ -721,9 +881,12 @@
         document.getElementById("kpiAvgTalk").textContent = `Avg talk: ${fmtSeconds(act.avgTalkDurationSeconds)}`;
         document.getElementById("kpiFollowups").textContent = sig.pendingFollowups;
         document.getElementById("kpiHot").textContent = `Interested: ${sig.interestedCalls} · Hot: ${sig.hotLeadCalls}`;
+        const missingAudioCount = Math.max(0, comp.answeredCalls - comp.withRecording);
         document.getElementById("kpiCoverage").textContent = `${comp.analysisCompletenessPct}%`;
         document.getElementById("coverageBar").style.width = `${comp.analysisCompletenessPct}%`;
-        document.getElementById("kpiCoverageSub").textContent = `${comp.withAnalysis} / ${comp.answeredCalls} answered analyzed`;
+        document.getElementById("kpiCoverageSub").textContent = missingAudioCount > 0
+          ? `${comp.withAnalysis} / ${comp.answeredCalls} analyzed (${missingAudioCount} no audio)`
+          : `${comp.withAnalysis} / ${comp.answeredCalls} answered analyzed`;
         document.getElementById("lastSyncText").textContent = comp.lastSyncAt
           ? `Last sync (${comp.lastSyncStatus}): ${new Date(comp.lastSyncAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST`
           : "Never synced";
@@ -731,55 +894,109 @@
         document.getElementById("providerText").textContent =
           `STT: ${providers.transcription.provider}/${providers.transcription.model} · LLM: ${providers.analysis.provider}/${providers.analysis.model}`;
 
-        // Queues
-        const qGrid = document.getElementById("queueGrid");
-        qGrid.innerHTML = Object.entries(queues)
-          .map(
-            ([name, c]) => `
-            <div class="q-box">
-              <div class="q-title">${name}</div>
-              <div class="q-nums">
-                <span>wait: <b>${c.waiting ?? 0}</b></span>
-                <span>active: <b style="color:var(--accent)">${c.active ?? 0}</b></span>
-                <span>done: <b style="color:var(--green)">${c.completed ?? 0}</b></span>
-                <span>fail: <b style="color:${(c.failed ?? 0) > 0 ? "var(--red)" : "inherit"}">${c.failed ?? 0}</b></span>
-              </div>
-            </div>`
-          )
-          .join("");
+        // Queues (only show BullMQ card when Redis worker mode is active; hide empty boxes on Vercel serverless)
+        const qSection = document.getElementById("queueSection");
+        const queueMode = queues.mode || "bullmq";
+        const queueData = queues.queues || queues;
+        if (queueMode === "serverless") {
+          qSection.style.display = "none";
+        } else {
+          qSection.style.display = "block";
+          const qGrid = document.getElementById("queueGrid");
+          qGrid.innerHTML = Object.entries(queueData)
+            .map(
+              ([name, c]) => `
+              <div class="q-box">
+                <div class="q-title">${name}</div>
+                <div class="q-nums">
+                  <span>wait: <b>${c.waiting ?? 0}</b></span>
+                  <span>active: <b style="color:var(--accent)">${c.active ?? 0}</b></span>
+                  <span>done: <b style="color:var(--green)">${c.completed ?? 0}</b></span>
+                  <span>fail: <b style="color:${(c.failed ?? 0) > 0 ? "var(--red)" : "inherit"}">${c.failed ?? 0}</b></span>
+                </div>
+              </div>`
+            )
+            .join("");
+        }
 
-        // Agents table
-        document.getElementById("agentsBody").innerHTML = agents.agents.length
-          ? agents.agents
-              .map(
-                (a) => `
-              <tr>
-                <td><b>${escapeHtml(a.name)}</b></td>
-                <td>${a.totalCalls}</td>
-                <td>${a.connectedCalls}</td>
-                <td>${a.connectionRatePct}%</td>
-                <td>${a.uniqueLeads}</td>
-                <td>${fmtSeconds(a.avgTalkDurationSeconds)}</td>
-                <td>${a.avgQualityScore != null ? `<span class="badge blue">${a.avgQualityScore}/100</span>` : `<span class="muted">—</span>`}</td>
-              </tr>`
-              )
+        // Compact Color-Coded Telecaller Performance Cards
+        const agentsGrid = document.getElementById("agentsGrid");
+        const activeAgents = agents.agents.filter((a) => a.totalCalls > 0);
+        const idleAgents = agents.agents.filter((a) => a.totalCalls === 0);
+        const orderedAgents = [...activeAgents, ...idleAgents];
+        agentsGrid.innerHTML = orderedAgents.length
+          ? orderedAgents
+              .map((a) => {
+                const tier =
+                  a.totalCalls === 0
+                    ? "tier-idle"
+                    : a.connectionRatePct >= 65
+                      ? "tier-high"
+                      : a.connectionRatePct >= 40
+                        ? "tier-mid"
+                        : "tier-low";
+                const barColor =
+                  tier === "tier-high"
+                    ? "var(--green)"
+                    : tier === "tier-mid"
+                      ? "var(--amber)"
+                      : tier === "tier-low"
+                        ? "var(--red)"
+                        : "#475569";
+                const pillCls =
+                  tier === "tier-high"
+                    ? "green"
+                    : tier === "tier-mid"
+                      ? "amber"
+                      : tier === "tier-low"
+                        ? "red"
+                        : "gray";
+                const isSelected = activeCrossFilter.agentId === a.agentId;
+                return `
+                  <div class="agent-card ${tier} ${isSelected ? "active-filter" : ""}" data-agent-id="${a.agentId}" data-agent-name="${escapeHtml(a.name)}" title="Click to filter calls by ${escapeHtml(a.name)}">
+                    <div class="agent-top">
+                      <span class="agent-name" title="${escapeHtml(a.name)}">${escapeHtml(a.name)}</span>
+                      <span class="badge ${pillCls}">${a.totalCalls ? a.connectionRatePct + "%" : "Idle"}</span>
+                    </div>
+                    <div class="mini-bar"><div style="width:${a.connectionRatePct}%;background:${barColor};"></div></div>
+                    <div class="agent-stats">
+                      <span>${a.connectedCalls}/${a.totalCalls} ans</span>
+                      <span>${a.uniqueLeads} leads</span>
+                      <span>${fmtSeconds(a.avgTalkDurationSeconds)}</span>
+                    </div>
+                    <div class="agent-stats">
+                      <span>QA: ${a.avgQualityScore != null ? `<b style="color:var(--text)">${a.avgQualityScore}/100</b>` : "—"}</span>
+                      <span>${a.analyzedCalls} analyzed</span>
+                    </div>
+                  </div>`;
+              })
               .join("")
-          : `<tr><td colspan="7" class="muted">No agent activity for this date.</td></tr>`;
+          : `<div class="muted">No agent activity for this date.</div>`;
 
-        // Funnel
+        agentsGrid.querySelectorAll(".agent-card[data-agent-id]").forEach((card) => {
+          card.addEventListener("click", () => {
+            const id = card.dataset.agentId;
+            if (activeCrossFilter.agentId === id) {
+              activeCrossFilter.agentId = "";
+              activeCrossFilter.agentName = "";
+            } else {
+              activeCrossFilter.agentId = id;
+              activeCrossFilter.agentName = card.dataset.agentName;
+            }
+            loadDashboard().then(scrollToExplorer);
+          });
+        });
+
+        // Outcome Breakdown SVG Donut + Bar Graph
+        renderOutcomeChart(daily.outcomeBreakdown || []);
+
+        // Compact Funnel summary
         const reach = funnel.leadReach;
-        const stagesHtml = (funnel.stages || [])
-          .map((s) => `<div style="display:flex;justify-content:space-between;padding:4px 0;"><span>${escapeHtml(s.stage)}</span><b>${s.leadCount}</b></div>`)
-          .join("");
         document.getElementById("funnelBox").innerHTML = `
-          <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-            <span>Attempted unique leads</span><b>${reach.attemptedUniqueLeads}</b>
+          <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+            <span>Attempted leads: <b style="color:var(--text)">${reach.attemptedUniqueLeads}</b></span>
+            <span>Connected leads: <b style="color:var(--green)">${reach.connectedUniqueLeads} (${reach.leadContactRatePct}%)</b></span>
           </div>
-          <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-            <span>Connected unique leads</span><b>${reach.connectedUniqueLeads} (${reach.leadContactRatePct}%)</b>
-          </div>
-          <div style="margin-top:12px;font-weight:600;color:var(--text);">Lead Stages (Cohort)</div>
-          ${stagesHtml || '<div class="muted">No lead stages recorded in this window.</div>'}
         `;
 
         // Calls table
@@ -910,6 +1127,37 @@
         .replaceAll('"', "&quot;");
     }
 
+    // KPI Card click-to-filter bindings
+    document.getElementById("cardTotal").addEventListener("click", () => {
+      clearCrossFilter(false);
+      activeCrossFilter.cardId = "cardTotal";
+      loadDashboard().then(scrollToExplorer);
+    });
+    document.getElementById("cardAnswered").addEventListener("click", () => {
+      clearCrossFilter(false);
+      document.getElementById("statusFilter").value = "answered";
+      activeCrossFilter.cardId = "cardAnswered";
+      loadDashboard().then(scrollToExplorer);
+    });
+    document.getElementById("cardMissed").addEventListener("click", () => {
+      clearCrossFilter(false);
+      document.getElementById("statusFilter").value = "missed";
+      activeCrossFilter.cardId = "cardMissed";
+      loadDashboard().then(scrollToExplorer);
+    });
+    document.getElementById("cardFollowups").addEventListener("click", () => {
+      clearCrossFilter(false);
+      activeCrossFilter.hasFollowup = true;
+      activeCrossFilter.cardId = "cardFollowups";
+      loadDashboard().then(scrollToExplorer);
+    });
+    document.getElementById("cardCoverage").addEventListener("click", () => {
+      clearCrossFilter(false);
+      document.getElementById("statusFilter").value = "answered";
+      activeCrossFilter.cardId = "cardCoverage";
+      loadDashboard().then(scrollToExplorer);
+    });
+
     // Wire events
     document.getElementById("datePicker").value = todayIstYmd();
     document.getElementById("refreshBtn").addEventListener("click", loadDashboard);
@@ -929,6 +1177,125 @@
       loadDashboard();
     });
 
+    function renderOutcomeChart(rows) {
+      const box = document.getElementById("outcomeChartBox");
+      const meta = document.getElementById("outcomeMeta");
+      const total = rows.reduce((sum, r) => sum + (r.count || 0), 0);
+      meta.textContent = `${total} analyzed`;
+      if (!total) {
+        box.innerHTML = `<div class="muted">No analyzed calls yet for this date. Click "Process Pending (All)" to generate outcome insights.</div>`;
+        return;
+      }
+
+      const palette = {
+        interested: "#22c55e",
+        verbal_commitment: "#10b981",
+        callback_requested: "#f59e0b",
+        information_requested: "#4f8cff",
+        not_interested: "#ef4444",
+        not_connected: "#a855f7",
+        unknown: "#64748b",
+      };
+
+      const radius = 56;
+      const circumference = 2 * Math.PI * radius;
+      let offset = 0;
+      const circles = rows
+        .map((r) => {
+          const pct = r.count / total;
+          const len = pct * circumference;
+          const color = palette[r.outcome] || "#94a3b8";
+          const seg = `<circle cx="74" cy="74" r="${radius}" fill="transparent" stroke="${color}" stroke-width="18" stroke-dasharray="${len} ${circumference - len}" stroke-dashoffset="${-offset}" transform="rotate(-90 74 74)" />`;
+          offset += len;
+          return seg;
+        })
+        .join("");
+
+      const legend = rows
+        .map((r) => {
+          const pct = Math.round((r.count / total) * 100);
+          const color = palette[r.outcome] || "#94a3b8";
+          const label = String(r.outcome || "unknown").replaceAll("_", " ");
+          const isSelected = activeCrossFilter.outcome === r.outcome;
+          return `
+            <div class="outcome-row ${isSelected ? "active-filter" : ""}" data-outcome="${escapeHtml(r.outcome)}" title="Click to filter calls with outcome: ${escapeHtml(label)}">
+              <div class="outcome-row-top">
+                <span style="text-transform:capitalize;"><span class="outcome-dot" style="background:${color};"></span>${escapeHtml(label)}</span>
+                <span><b>${r.count}</b> <span class="muted">(${pct}%)</span></span>
+              </div>
+              <div class="mini-bar"><div style="width:${pct}%;background:${color};"></div></div>
+            </div>`;
+        })
+        .join("");
+
+      box.innerHTML = `
+        <div class="donut-box">
+          <svg width="148" height="148" viewBox="0 0 148 148">
+            <circle cx="74" cy="74" r="${radius}" fill="transparent" stroke="rgba(148,163,184,0.12)" stroke-width="18" />
+            ${circles}
+          </svg>
+          <div class="donut-center">
+            <div class="donut-total">${total}</div>
+            <div class="donut-sub">Analyzed</div>
+          </div>
+        </div>
+        <div class="outcome-legend">${legend}</div>
+      `;
+
+      box.querySelectorAll(".outcome-row[data-outcome]").forEach((row) => {
+        row.addEventListener("click", () => {
+          const val = row.dataset.outcome;
+          activeCrossFilter.outcome = activeCrossFilter.outcome === val ? "" : val;
+          loadDashboard().then(scrollToExplorer);
+        });
+      });
+    }
+
+    let autoProcessing = false;
+
+    async function runAutoProcessLoop(btn) {
+      if (autoProcessing) {
+        autoProcessing = false;
+        btn.textContent = "Stopping...";
+        return;
+      }
+      autoProcessing = true;
+      btn.textContent = "Stop Auto-Process";
+      let totalDone = 0;
+
+      try {
+        while (autoProcessing) {
+          setBanner(`Auto-transcribing & analyzing pending calls... (${totalDone} completed this run)`);
+          const res = await apiFetch("/api/v1/queues/enqueue-pending", {
+            method: "POST",
+            body: JSON.stringify({ limit: 50 }),
+          });
+
+          if (res.mode === "queue") {
+            setBanner(`Enqueued ${res.enqueued} calls into BullMQ worker.`);
+            await loadDashboard();
+            break;
+          }
+
+          totalDone += res.processed || 0;
+          await loadDashboard();
+
+          if (!res.remaining || (res.processed === 0 && res.failed === 0)) {
+            setBanner(`Auto-processing complete! Processed ${totalDone} calls.`);
+            break;
+          }
+          // Brief pause between serverless batches
+          await new Promise((r) => setTimeout(r, 400));
+        }
+      } catch (e) {
+        setBanner(`Auto-process paused: ${e.message}`, true);
+      } finally {
+        autoProcessing = false;
+        btn.disabled = false;
+        btn.textContent = "Process Pending (All)";
+      }
+    }
+
     document.getElementById("syncBtn").addEventListener("click", async (ev) => {
       const btn = ev.target;
       const dateYmd = document.getElementById("datePicker").value || todayIstYmd();
@@ -940,8 +1307,10 @@
           method: "POST",
           body: JSON.stringify({ from, to }),
         });
-        setBanner(`Synced ${res.callsFetched} calls (${res.newCalls} new, ${res.updatedCalls} updated).`);
+        setBanner(`Synced ${res.callsFetched} calls (${res.newCalls} new, ${res.updatedCalls} updated). Starting auto-analysis...`);
         await loadDashboard();
+        // Automatically transcribe & analyze any newly synced pending calls
+        runAutoProcessLoop(document.getElementById("enqueueBtn"));
       } catch (e) {
         setBanner(`Sync failed: ${e.message}`, true);
       } finally {
@@ -950,23 +1319,8 @@
       }
     });
 
-    document.getElementById("enqueueBtn").addEventListener("click", async (ev) => {
-      const btn = ev.target;
-      btn.disabled = true;
-      btn.textContent = "Enqueueing...";
-      try {
-        const res = await apiFetch("/api/v1/queues/enqueue-pending", {
-          method: "POST",
-          body: JSON.stringify({ limit: 50 }),
-        });
-        setBanner(`Enqueued ${res.enqueued} pending answered calls to BullMQ worker.`);
-        await loadDashboard();
-      } catch (e) {
-        setBanner(`Enqueue failed: ${e.message}`, true);
-      } finally {
-        btn.disabled = false;
-        btn.textContent = "Process Pending (All)";
-      }
+    document.getElementById("enqueueBtn").addEventListener("click", (ev) => {
+      runAutoProcessLoop(ev.target);
     });
 
     // Floating Bot open / close / auto-expand + Frequent Question Badges

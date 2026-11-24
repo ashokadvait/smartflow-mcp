@@ -81,6 +81,17 @@ export async function getDailyCallReport(params: {
     .innerJoin(calls, eq(calls.id, callAnalyses.callId))
     .where(and(eq(calls.tenantId, params.tenantId), gte(calls.startedAt, from), lt(calls.startedAt, to)));
 
+  const outcomeRows = await db
+    .select({
+      outcome: callAnalyses.callOutcome,
+      count: sql<number>`count(distinct ${callAnalyses.callId})::int`,
+    })
+    .from(callAnalyses)
+    .innerJoin(calls, eq(calls.id, callAnalyses.callId))
+    .where(and(eq(calls.tenantId, params.tenantId), gte(calls.startedAt, from), lt(calls.startedAt, to)))
+    .groupBy(callAnalyses.callOutcome)
+    .orderBy(desc(sql`count(distinct ${callAnalyses.callId})`));
+
   const [lastSync] = await db
     .select({
       status: syncLogs.status,
@@ -132,6 +143,7 @@ export async function getDailyCallReport(params: {
       overdueFollowups: followupCounts?.overdueFollowups ?? 0,
       note: "Actual conversions must be verified from authoritative CRM/business stage data.",
     },
+    outcomeBreakdown: outcomeRows,
   };
 }
 
@@ -189,6 +201,7 @@ export async function searchCalls(params: {
   department?: string;
   status?: string;
   outcome?: string;
+  hasFollowup?: boolean;
   searchText?: string;
   limit?: number;
 }) {
@@ -209,6 +222,11 @@ export async function searchCalls(params: {
   }
   if (params.status) conditions.push(eq(calls.status, params.status));
   if (params.outcome) conditions.push(eq(callAnalyses.callOutcome, params.outcome));
+  if (params.hasFollowup) {
+    conditions.push(
+      sql`exists (select 1 from ${followups} f where f.call_id = ${calls.id} and f.status = 'pending')`
+    );
+  }
   if (params.searchText) {
     const pattern = `%${params.searchText}%`;
     conditions.push(or(ilike(transcripts.content, pattern), ilike(calls.disposition, pattern))!);
