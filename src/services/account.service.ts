@@ -297,6 +297,7 @@ export async function updateAccount(
   identifier: string,
   input: {
     name?: string;
+    slug?: string;
     timezone?: string;
     active?: boolean;
     smartfloBaseUrl?: string | null;
@@ -315,7 +316,42 @@ export async function updateAccount(
     updatedAt: new Date(),
   };
 
-  if (input.name !== undefined) patch.name = input.name.trim();
+  if (input.name !== undefined) {
+    patch.name = input.name.trim();
+    // If renaming the default tenant while it still relies on .env Smartflo creds, persist them encrypted to DB
+    if (
+      existing.name === env.DEFAULT_TENANT_NAME &&
+      patch.name !== env.DEFAULT_TENANT_NAME &&
+      !existing.smartfloApiKeyEncrypted &&
+      !existing.smartfloEmailEncrypted &&
+      input.smartfloApiKey === undefined &&
+      input.smartfloEmail === undefined
+    ) {
+      if (env.SMARTFLOW_API_KEY) {
+        patch.smartfloApiKeyEncrypted = encryptSecret(env.SMARTFLOW_API_KEY.trim());
+      } else if (env.SMARTFLOW_EMAIL && env.SMARTFLOW_PASSWORD) {
+        patch.smartfloEmailEncrypted = encryptSecret(env.SMARTFLOW_EMAIL.trim());
+        patch.smartfloPasswordEncrypted = encryptSecret(env.SMARTFLOW_PASSWORD);
+      }
+      if (!existing.smartfloWebhookSecretEncrypted && env.SMARTFLOW_WEBHOOK_SECRET) {
+        patch.smartfloWebhookSecretEncrypted = encryptSecret(env.SMARTFLOW_WEBHOOK_SECRET.trim());
+      }
+    }
+  }
+  if (input.slug !== undefined && input.slug.trim()) {
+    const nextSlug = normalizeSlug(input.slug);
+    if (nextSlug !== existing.slug) {
+      const clash = await db
+        .select({ id: tenants.id })
+        .from(tenants)
+        .where(eq(tenants.slug, nextSlug))
+        .limit(1);
+      if (clash[0] && clash[0].id !== existing.id) {
+        throw new ConflictError(`Slug "${nextSlug}" is already in use by another organization.`);
+      }
+      patch.slug = nextSlug;
+    }
+  }
   if (input.timezone !== undefined) patch.timezone = input.timezone;
   if (input.active !== undefined) patch.active = input.active;
   if (input.smartfloBaseUrl !== undefined) {
@@ -377,6 +413,7 @@ export async function createApiKeyRecord(input: {
       name: input.name.trim(),
       keyPrefix: generated.prefix,
       keyHash: generated.hash,
+      keyEncrypted: encryptSecret(generated.rawKey),
       role: input.role,
       tenantId: tenant?.id ?? null,
       active: true,
@@ -397,11 +434,12 @@ export async function createApiKeyRecord(input: {
 
 export async function listApiKeyRecords(tenantId?: string) {
   const whereClause = tenantId ? eq(apiKeys.tenantId, tenantId) : undefined;
-  return db
+  const rows = await db
     .select({
       id: apiKeys.id,
       name: apiKeys.name,
       keyPrefix: apiKeys.keyPrefix,
+      keyEncrypted: apiKeys.keyEncrypted,
       role: apiKeys.role,
       tenantId: apiKeys.tenantId,
       active: apiKeys.active,
@@ -411,19 +449,60 @@ export async function listApiKeyRecords(tenantId?: string) {
     .from(apiKeys)
     .where(whereClause)
     .orderBy(desc(apiKeys.createdAt));
+
+  return rows.map(({ keyEncrypted, ...rest }) => ({
+    ...rest,
+    canReveal: Boolean(keyEncrypted),
+  }));
 }
 
-export async function revokeApiKeyRecord(keyId: string): Promise<{ id: string; revoked: boolean }> {
-  const [updated] = await db
-    .update(apiKeys)
-    .set({ active: false })
+export async function revealApiKeyRecord(keyId: string): Promise<{
+  id: string;
+  name: string;
+  role: "admin" | "tenant";
+  tenantId: string | null;
+  accountSlug: string | null;
+  keyPrefix: string;
+  apiKey: string;
+}> {
+  const rows = await db.select().from(apiKeys).where(eq(apiKeys.id, keyId)).limit(1);
+  const row = rows[0];
+  if (!row || !row.active) {
+    throw new NotFoundError(`Active API key "${keyId}" not found.`);
+  }
+  if (!row.keyEncrypted) {
+    throw new ValidationError(
+      "This older API key was created before key viewing was enabled. Delete it and generate a new key."
+    );
+  }
+
+  let accountSlug: string | null = null;
+  if (row.tenantId) {
+    const tRows = await db.select({ slug: tenants.slug, name: tenants.name }).from(tenants).where(eq(tenants.id, row.tenantId)).limit(1);
+    accountSlug = tRows[0]?.slug ?? tRows[0]?.name ?? null;
+  }
+
+  return {
+    id: row.id,
+    name: row.name,
+    role: row.role === "admin" ? "admin" : "tenant",
+    tenantId: row.tenantId,
+    accountSlug,
+    keyPrefix: row.keyPrefix,
+    apiKey: decryptSecret(row.keyEncrypted),
+  };
+}
+
+export async function revokeApiKeyRecord(keyId: string): Promise<{ id: string; deleted: boolean }> {
+  const [deleted] = await db
+    .delete(apiKeys)
     .where(eq(apiKeys.id, keyId))
     .returning({ id: apiKeys.id });
 
-  if (!updated) {
+  if (!deleted) {
     throw new NotFoundError(`API key "${keyId}" not found.`);
   }
-  return { id: updated.id, revoked: true };
+  return { id: deleted.id, deleted: true };
 }
 
 /**

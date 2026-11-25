@@ -46,6 +46,7 @@ export const apiKeys = pgTable(
     name: text("name").notNull(),
     keyPrefix: text("key_prefix").notNull(),
     keyHash: text("key_hash").notNull(),
+    keyEncrypted: text("key_encrypted"),
     role: text("role").notNull().default("tenant"), // admin | tenant
     tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }),
     active: boolean("active").notNull().default(true),

@@ -30,6 +30,7 @@ import {
   listAllAccounts,
   listApiKeyRecords,
   resolveTenantForContext,
+  revealApiKeyRecord,
   revokeApiKeyRecord,
   updateAccount,
   type AuthContext,
@@ -154,6 +155,7 @@ export function buildApp() {
     const body = z
       .object({
         name: z.string().min(2).max(120).optional(),
+        slug: z.string().min(3).max(64).optional(),
         timezone: z.string().optional(),
         active: z.boolean().optional(),
         smartfloBaseUrl: z.string().url().nullable().optional(),
@@ -207,7 +209,13 @@ export function buildApp() {
     });
   });
 
-  // Revoke an API key (admin only)
+  // Reveal an existing active API key (admin only)
+  app.get("/api/v1/api-keys/:id/reveal", { preHandler: requireAdmin }, async (req) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    return revealApiKeyRecord(id);
+  });
+
+  // Delete an API key (admin only)
   app.delete("/api/v1/api-keys/:id", { preHandler: requireAdmin }, async (req) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
     return revokeApiKeyRecord(id);

@@ -691,6 +691,43 @@
       <div id="accountsMsg" class="banner" style="display:none;margin-bottom:12px;"></div>
       <div id="newKeyReveal" class="key-reveal" style="display:none;"></div>
 
+      <div id="editOrgCard" class="card" style="display:none;margin-bottom:14px;background:var(--surface-2);border-color:var(--accent);">
+        <h2 style="font-size:0.92rem;margin-bottom:10px;">
+          <span>Edit Organization</span>
+          <button id="cancelEditOrgBtn" class="sm">Cancel</button>
+        </h2>
+        <input type="hidden" id="editOrgId" />
+        <input type="hidden" id="editOrgOldSlug" />
+        <div class="form-grid">
+          <div class="form-field">
+            <label>Organization Name *</label>
+            <input type="text" id="editOrgName" placeholder="Organization name" />
+          </div>
+          <div class="form-field">
+            <label>Slug</label>
+            <input type="text" id="editOrgSlug" placeholder="org-slug" />
+          </div>
+          <div class="form-field">
+            <label>Timezone</label>
+            <input type="text" id="editOrgTz" value="Asia/Kolkata" />
+          </div>
+          <div class="form-field">
+            <label>New Smartflo API Token (leave blank to keep)</label>
+            <input type="password" id="editOrgApiKey" placeholder="Optional new token..." />
+          </div>
+          <div class="form-field">
+            <label>Status</label>
+            <select id="editOrgActive">
+              <option value="true">Active</option>
+              <option value="false">Inactive</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;">
+          <button id="saveEditOrgBtn" class="primary">Save Changes</button>
+        </div>
+      </div>
+
       <div class="card" style="margin-bottom:14px;background:var(--surface-2);">
         <h2 style="font-size:0.92rem;margin-bottom:10px;">
           <span>Add Smartflo Organization</span>
@@ -1398,32 +1435,55 @@
       el.textContent = text;
     }
 
-    function showNewKeyReveal(created) {
+    function showKeyReveal(keyData, isNew = false) {
       const box = document.getElementById("newKeyReveal");
       const mcpUrl = `${window.location.origin}/mcp`;
-      const scopeLabel = created.role === "admin"
+      const scopeLabel = keyData.role === "admin"
         ? "Admin (All Organizations)"
-        : `Organization: ${created.accountSlug || created.tenantId}`;
+        : `Organization: ${keyData.accountSlug || keyData.tenantId}`;
+      const title = isNew
+        ? `New Claude API Key Created (${escapeHtml(scopeLabel)})`
+        : `Claude API Key — ${escapeHtml(keyData.name || "Key")} (${escapeHtml(scopeLabel)})`;
       box.style.display = "block";
       box.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;">
-          <b style="color:#86efac;">New Claude API Key Created (${escapeHtml(scopeLabel)})</b>
-          <button id="copyNewKeyBtn" class="sm primary">Copy Key</button>
+          <b style="color:#86efac;">${title}</b>
+          <div style="display:flex;gap:6px;">
+            <button id="copyNewKeyBtn" class="sm primary">Copy Key</button>
+            <button id="hideKeyRevealBtn" class="sm">Hide</button>
+          </div>
         </div>
-        <div style="margin-bottom:8px;"><code>${escapeHtml(created.apiKey)}</code></div>
+        <div style="margin-bottom:8px;"><code>${escapeHtml(keyData.apiKey)}</code></div>
         <div class="muted" style="font-size:0.78rem;">
-          Save this key now — it won't be shown again.<br/>
           <b>Claude Custom Connector:</b> URL <code>${escapeHtml(mcpUrl)}</code> · Auth: <b>No sign-in</b> · Header: <code>x-api-key</code> = key above · Transport: <b>Streamable HTTP</b>
         </div>
       `;
       document.getElementById("copyNewKeyBtn")?.addEventListener("click", async (ev) => {
         try {
-          await navigator.clipboard.writeText(created.apiKey);
+          await navigator.clipboard.writeText(keyData.apiKey);
           ev.target.textContent = "Copied!";
         } catch {
           ev.target.textContent = "Copy manually";
         }
       });
+      document.getElementById("hideKeyRevealBtn")?.addEventListener("click", () => {
+        box.style.display = "none";
+      });
+    }
+
+    async function revealKeyById(keyId, btn) {
+      if (btn) btn.disabled = true;
+      try {
+        const revealed = await apiFetch(`/api/v1/api-keys/${encodeURIComponent(keyId)}/reveal`, {
+          skipAccountHeader: true,
+        });
+        showKeyReveal(revealed, false);
+        showAccountsMsg("");
+      } catch (e) {
+        showAccountsMsg(e.message, true);
+      } finally {
+        if (btn) btn.disabled = false;
+      }
     }
 
     async function refreshAccountsModal() {
@@ -1435,12 +1495,22 @@
       const accounts = accRes.accounts || [];
       const keys = keysRes.keys || [];
       const accountNameById = Object.fromEntries(accounts.map((a) => [a.id, a.slug || a.name]));
+      const activeKeyByTenantId = {};
+      for (const k of keys) {
+        if (k.active && k.role === "tenant" && k.tenantId && !activeKeyByTenantId[k.tenantId]) {
+          activeKeyByTenantId[k.tenantId] = k;
+        }
+      }
 
       document.getElementById("orgsCountLabel").textContent = `${accounts.length} organization${accounts.length === 1 ? "" : "s"}`;
       document.getElementById("orgsTableBody").innerHTML = accounts.length
         ? accounts
             .map((a) => {
               const slug = a.slug || a.id;
+              const existingKey = activeKeyByTenantId[a.id];
+              const keyBtnHtml = existingKey
+                ? `<button class="sm primary" data-show-key="${escapeHtml(existingKey.id)}">Show Claude Key</button>`
+                : `<button class="sm primary" data-gen-key="${escapeHtml(slug)}" data-org-name="${escapeHtml(a.name)}">Generate Claude Key</button>`;
               return `
                 <tr>
                   <td><b>${escapeHtml(a.name)}</b></td>
@@ -1449,7 +1519,8 @@
                   <td>${a.active ? `<span class="badge green">Active</span>` : `<span class="badge gray">Inactive</span>`}</td>
                   <td style="display:flex;gap:6px;flex-wrap:wrap;">
                     <button class="sm" data-switch-org="${escapeHtml(slug)}">Switch</button>
-                    <button class="sm primary" data-gen-key="${escapeHtml(slug)}" data-org-name="${escapeHtml(a.name)}">Generate Claude Key</button>
+                    <button class="sm" data-edit-org="${escapeHtml(a.id)}">Edit</button>
+                    ${keyBtnHtml}
                   </td>
                 </tr>`;
             })
@@ -1466,6 +1537,22 @@
         });
       });
 
+      document.querySelectorAll("button[data-edit-org]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const target = accounts.find((a) => a.id === btn.dataset.editOrg);
+          if (!target) return;
+          document.getElementById("editOrgId").value = target.id;
+          document.getElementById("editOrgOldSlug").value = target.slug || target.id;
+          document.getElementById("editOrgName").value = target.name || "";
+          document.getElementById("editOrgSlug").value = target.slug || "";
+          document.getElementById("editOrgTz").value = target.timezone || "Asia/Kolkata";
+          document.getElementById("editOrgApiKey").value = "";
+          document.getElementById("editOrgActive").value = target.active ? "true" : "false";
+          document.getElementById("editOrgCard").style.display = "block";
+          document.getElementById("editOrgName").focus();
+        });
+      });
+
       document.querySelectorAll("button[data-gen-key]").forEach((btn) => {
         btn.addEventListener("click", async () => {
           const slug = btn.dataset.genKey;
@@ -1479,7 +1566,7 @@
               skipAccountHeader: true,
               body: JSON.stringify({ name: label.trim() }),
             });
-            showNewKeyReveal(created);
+            showKeyReveal(created, true);
             showAccountsMsg(`Issued dedicated Claude key for ${orgName}.`);
             await refreshAccountsModal();
           } catch (e) {
@@ -1504,25 +1591,33 @@
                   <td><code>${escapeHtml(k.keyPrefix)}…</code></td>
                   <td class="muted">${escapeHtml(lastUsed)}</td>
                   <td>${k.active ? `<span class="badge green">Active</span>` : `<span class="badge red">Revoked</span>`}</td>
-                  <td>${k.active ? `<button class="sm danger" data-revoke-key="${escapeHtml(k.id)}">Revoke</button>` : `<span class="muted">—</span>`}</td>
+                  <td style="display:flex;gap:6px;flex-wrap:wrap;">
+                    ${k.active && k.canReveal ? `<button class="sm" data-show-key="${escapeHtml(k.id)}">Show</button>` : ""}
+                    <button class="sm danger" data-revoke-key="${escapeHtml(k.id)}">Delete</button>
+                  </td>
                 </tr>`;
             })
             .join("")
         : `<tr><td colspan="6" class="muted">No issued API keys yet (using bootstrap MCP_API_KEY).</td></tr>`;
 
+      document.querySelectorAll("button[data-show-key]").forEach((btn) => {
+        btn.addEventListener("click", () => revealKeyById(btn.dataset.showKey, btn));
+      });
+
       document.querySelectorAll("button[data-revoke-key]").forEach((btn) => {
         btn.addEventListener("click", async () => {
-          if (!window.confirm("Revoke this Claude API key? Any Claude connector using it will lose access immediately.")) return;
+          if (!window.confirm("Delete this Claude API key? Any Claude connector using it will stop working, and you can generate a new one.")) return;
           btn.disabled = true;
           try {
             await apiFetch(`/api/v1/api-keys/${encodeURIComponent(btn.dataset.revokeKey)}`, {
               method: "DELETE",
               skipAccountHeader: true,
             });
-            showAccountsMsg("API key revoked.");
+            document.getElementById("newKeyReveal").style.display = "none";
+            showAccountsMsg("API key deleted. You can generate a new key anytime.");
             await refreshAccountsModal();
           } catch (e) {
-            showAccountsMsg(`Failed to revoke key: ${e.message}`, true);
+            showAccountsMsg(`Failed to delete key: ${e.message}`, true);
           }
         });
       });
@@ -1531,11 +1626,59 @@
     document.getElementById("accountsBtn").addEventListener("click", async () => {
       document.getElementById("accountsModal").classList.add("open");
       document.getElementById("newKeyReveal").style.display = "none";
+      document.getElementById("editOrgCard").style.display = "none";
       showAccountsMsg("");
       try {
         await refreshAccountsModal();
       } catch (e) {
         showAccountsMsg(`Failed to load accounts: ${e.message}`, true);
+      }
+    });
+
+    document.getElementById("cancelEditOrgBtn").addEventListener("click", () => {
+      document.getElementById("editOrgCard").style.display = "none";
+    });
+
+    document.getElementById("saveEditOrgBtn").addEventListener("click", async (ev) => {
+      const btn = ev.target;
+      const id = document.getElementById("editOrgId").value;
+      const oldSlug = document.getElementById("editOrgOldSlug").value;
+      const name = document.getElementById("editOrgName").value.trim();
+      const slug = document.getElementById("editOrgSlug").value.trim();
+      const timezone = document.getElementById("editOrgTz").value.trim() || "Asia/Kolkata";
+      const smartfloApiKey = document.getElementById("editOrgApiKey").value.trim();
+      const active = document.getElementById("editOrgActive").value === "true";
+
+      if (!name) {
+        showAccountsMsg("Organization Name is required.", true);
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = "Saving...";
+      try {
+        const payload = { name, timezone, active };
+        if (slug) payload.slug = slug;
+        if (smartfloApiKey) payload.smartfloApiKey = smartfloApiKey;
+
+        const updated = await apiFetch(`/api/v1/accounts/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          skipAccountHeader: true,
+          body: JSON.stringify(payload),
+        });
+
+        if (getSelectedAccount() === oldSlug || getSelectedAccount() === id) {
+          setSelectedAccount(updated.slug || updated.id);
+        }
+        document.getElementById("editOrgCard").style.display = "none";
+        showAccountsMsg(`Updated organization "${updated.name}" (${updated.slug}).`);
+        await loadAccountsContext();
+        await refreshAccountsModal();
+      } catch (e) {
+        showAccountsMsg(`Failed to update organization: ${e.message}`, true);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Save Changes";
       }
     });
 
@@ -1616,7 +1759,7 @@
           skipAccountHeader: true,
           body: JSON.stringify({ name: label.trim() }),
         });
-        showNewKeyReveal(created);
+        showKeyReveal(created, true);
         showAccountsMsg("Issued new Admin API key (all organizations).");
         await refreshAccountsModal();
       } catch (e) {
