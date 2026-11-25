@@ -105,6 +105,13 @@ export function buildApp() {
     if (err instanceof z.ZodError) {
       return reply.status(400).send({ error: "Validation error", issues: err.issues });
     }
+    const fastifyErr = err as { statusCode?: number; message?: string; code?: string };
+    if (typeof fastifyErr.statusCode === "number" && fastifyErr.statusCode >= 400 && fastifyErr.statusCode < 500) {
+      return reply.status(fastifyErr.statusCode).send({
+        error: fastifyErr.message || "Bad request",
+        code: fastifyErr.code || "BAD_REQUEST",
+      });
+    }
     logger.error({ err }, "Unhandled HTTP error");
     return reply.status(500).send({ error: "Internal server error" });
   });

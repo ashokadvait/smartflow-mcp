@@ -885,7 +885,7 @@
     async function apiFetch(path, options = {}) {
       const selectedAcc = getSelectedAccount();
       const headers = {
-        "Content-Type": "application/json",
+        ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}),
         ...(getApiKey() ? { Authorization: `Bearer ${getApiKey()}` } : {}),
         ...(selectedAcc && !options.skipAccountHeader ? { "x-account": selectedAcc } : {}),
         ...(options.headers || {}),
