@@ -719,6 +719,8 @@ export async function getCallsNeedingReview(params: {
       sentiment: callAnalyses.sentiment,
       callOutcome: callAnalyses.callOutcome,
       transcriptQuality: transcripts.qualityFlag,
+      complianceRiskLevel: sql<string | null>`${callAnalyses.analysisJson}->'compliance'->>'riskLevel'`,
+      requiresHumanReview: sql<boolean>`coalesce((${callAnalyses.analysisJson}->'compliance'->>'requiresHumanReview')::boolean, false)`,
     })
     .from(calls)
     .innerJoin(callAnalyses, eq(callAnalyses.callId, calls.id))
@@ -732,7 +734,9 @@ export async function getCallsNeedingReview(params: {
         or(
           lte(callAnalyses.qualityScore, maxScore),
           eq(callAnalyses.sentiment, "negative"),
-          eq(transcripts.qualityFlag, "low_quality")
+          eq(transcripts.qualityFlag, "low_quality"),
+          sql`coalesce((${callAnalyses.analysisJson}->'compliance'->>'requiresHumanReview')::boolean, false) = true`,
+          sql`${callAnalyses.analysisJson}->'compliance'->>'riskLevel' in ('medium', 'high')`
         )!
       )
     )

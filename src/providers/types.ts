@@ -13,7 +13,7 @@ export interface TranscriptionResult {
 export interface TranscriptionProvider {
   readonly name: ProviderName;
   readonly model: string;
-  transcribe(input: { filePath: string; language?: string }): Promise<TranscriptionResult>;
+  transcribe(input: { filePath: string; language?: string; prompt?: string }): Promise<TranscriptionResult>;
 }
 
 export const AgentEvaluationSchema = z.object({
@@ -58,8 +58,37 @@ export const CallAnalysisSchema = z.object({
       category: z.string(),
       description: z.string(),
       evidence: z.string(),
+      agentResponse: z.string().optional(),
+      improvement: z.string().optional(),
     })
   ),
+  productKnowledgeCheck: z
+    .object({
+      status: z
+        .enum(["correct", "partially_correct", "incorrect", "not_applicable", "insufficient_knowledge"])
+        .default("not_applicable"),
+      correctInformation: z.array(z.string()).default([]),
+      incorrectInformation: z.array(z.string()).default([]),
+      missingInformation: z.array(z.string()).default([]),
+    })
+    .optional(),
+  missedOpportunities: z
+    .array(
+      z.object({
+        opportunity: z.string(),
+        reason: z.string(),
+        suggestedAction: z.string(),
+      })
+    )
+    .default([]),
+  compliance: z
+    .object({
+      riskLevel: z.enum(["none", "low", "medium", "high"]).default("none"),
+      violations: z.array(z.string()).default([]),
+      medicalClaims: z.array(z.string()).default([]),
+      requiresHumanReview: z.boolean().default(false),
+    })
+    .default({}),
   agentEvaluation: AgentEvaluationSchema,
   followUp: z.object({
     required: z.boolean(),

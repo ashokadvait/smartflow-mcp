@@ -54,6 +54,7 @@ export async function analyzeCallTranscript(
     callDate: call.startedAt.toISOString(),
     durationSeconds: call.answeredSeconds ?? call.durationSeconds ?? undefined,
     leadSource: lead?.source ?? undefined,
+    department: call.campaignId ?? undefined,
     language: transcript.language ?? undefined,
   });
 

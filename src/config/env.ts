@@ -22,6 +22,7 @@ const EnvSchema = z.object({
   TRANSCRIPTION_PROVIDER: z.enum(["groq", "openai"]).default("groq"),
   TRANSCRIPTION_MODEL: z.string().default("whisper-large-v3-turbo"),
   TRANSCRIPTION_LANGUAGE: z.string().optional().default(""),
+  TRANSCRIPTION_PROMPT: z.string().optional().default(""),
 
   ANALYSIS_PROVIDER: z.enum(["groq", "openai", "gemini", "ollama"]).default("groq"),
   ANALYSIS_MODEL: z.string().default("openai/gpt-oss-120b"),

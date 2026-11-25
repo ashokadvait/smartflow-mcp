@@ -12,12 +12,14 @@ export function createGroqTranscriptionProvider(model = env.TRANSCRIPTION_MODEL)
   return {
     name: "groq",
     model,
-    async transcribe({ filePath, language }): Promise<TranscriptionResult> {
+    async transcribe({ filePath, language, prompt }): Promise<TranscriptionResult> {
       const result = (await groq.audio.transcriptions.create({
         file: createReadStream(filePath),
         model,
         response_format: "verbose_json",
+        temperature: 0,
         ...(language ? { language } : {}),
+        ...(prompt ? { prompt } : {}),
       })) as unknown as {
         text: string;
         language?: string;

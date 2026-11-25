@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { mapSmartfloCallRecord, mapSmartfloUser, normalizeCallStatus } from "../src/integrations/smartflow/mappers.js";
 import { parseSmartfloWebhook } from "../src/integrations/smartflow/webhooks.js";
 import { validateRecordingUrl } from "../src/pipeline/recording.pipeline.js";
+import { PRAANA_VAIDYA_KNOWLEDGE_BASE, PRAANA_VAIDYA_WHISPER_PROMPT } from "../src/prompts/business-knowledge.js";
+import { buildCallAnalysisPrompt, CALL_ANALYSIS_PROMPT_VERSION } from "../src/prompts/call-analysis.prompt.js";
 import {
   calculateLeadPriorityScore,
   CallAnalysisSchema,
@@ -174,6 +176,107 @@ describe("Rubric scoring & Lead priority score", () => {
         },
       })
     ).toBe(0);
+  });
+});
+
+describe("Praana Vaidya Whisper prompt & Business Knowledge Base", () => {
+  it("keeps Whisper prompt concise without duplicate brand names", () => {
+    const terms = PRAANA_VAIDYA_WHISPER_PROMPT.split(",").map((t) => t.trim());
+    expect(terms.filter((t) => t === "Praana Vaidya")).toHaveLength(1);
+    expect(PRAANA_VAIDYA_WHISPER_PROMPT).toContain("Panchakarma");
+    expect(PRAANA_VAIDYA_WHISPER_PROMPT).toContain("Dr. Chethan Upadhyaya");
+    expect(PRAANA_VAIDYA_WHISPER_PROMPT.length).toBeLessThan(900);
+  });
+
+  it("injects business knowledge separately from untrusted transcript", () => {
+    const prompt = buildCallAnalysisPrompt("Hello from Praana Vaidya", {
+      callId: "call-1",
+      agentName: "Priya",
+      department: "Online Consultation",
+      callDate: "2026-11-24T10:00:00Z",
+    });
+
+    expect(CALL_ANALYSIS_PROMPT_VERSION).toBe("call-analysis-v2");
+    expect(prompt).toContain("<business_knowledge>");
+    expect(prompt).toContain(PRAANA_VAIDYA_KNOWLEDGE_BASE.business.name);
+    expect(prompt).toContain("Department/Campaign: Online Consultation");
+    expect(prompt).toContain("<transcript>\nHello from Praana Vaidya\n</transcript>");
+  });
+
+  it("parses extended v2 analysis fields with compliance and missed opportunities", () => {
+    const parsed = CallAnalysisSchema.parse({
+      summary: "Patient asked about Home Panchakarma for joint pain.",
+      customerIntent: "high",
+      leadTemperature: "hot",
+      sentiment: "positive",
+      callOutcome: "callback_requested",
+      signals: {
+        requestedPricing: true,
+        requestedCallback: true,
+        mentionedPurchaseTimeline: false,
+        requestedDemoOrAppointment: true,
+        explicitRejection: false,
+      },
+      objections: [
+        {
+          category: "travel",
+          description: "Cannot visit hospital",
+          evidence: "I cannot travel to the clinic",
+          agentResponse: "Mentioned Home Panchakarma",
+          improvement: "Also explain live online doctor support",
+        },
+      ],
+      productKnowledgeCheck: {
+        status: "correct",
+        correctInformation: ["Home Panchakarma available"],
+        incorrectInformation: [],
+        missingInformation: ["App Based Panchakarma"],
+      },
+      missedOpportunities: [
+        {
+          opportunity: "Mention No-cost EMI",
+          reason: "Patient asked about affordability",
+          suggestedAction: "Inform patient that no-cost EMI options are available",
+        },
+      ],
+      compliance: {
+        riskLevel: "high",
+        violations: ["Guaranteed 100% cure"],
+        medicalClaims: ["This will cure your arthritis completely"],
+        requiresHumanReview: true,
+      },
+      agentEvaluation: {
+        introduction: 8,
+        discovery: 12,
+        productKnowledge: 13,
+        explanation: 12,
+        listening: 13,
+        objectionHandling: 11,
+        nextStep: 8,
+        professionalism: 4,
+        strengths: ["Suggested Home Panchakarma"],
+        weaknesses: ["Made unsupported cure claim"],
+      },
+      followUp: {
+        required: true,
+        suggestedDate: null,
+        reason: "Patient requested callback after consulting family",
+        action: "Call back to schedule online consultation",
+      },
+      conversionProbability: 65,
+      evidence: [
+        {
+          claim: "Unsupported cure claim",
+          quote: "This will cure your arthritis completely",
+          timestampStart: 32,
+        },
+      ],
+    });
+
+    expect(parsed.compliance.requiresHumanReview).toBe(true);
+    expect(parsed.compliance.riskLevel).toBe("high");
+    expect(parsed.missedOpportunities).toHaveLength(1);
+    expect(parsed.productKnowledgeCheck?.status).toBe("correct");
   });
 });
 

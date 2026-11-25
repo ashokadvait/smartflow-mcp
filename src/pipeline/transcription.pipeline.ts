@@ -3,6 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { env } from "../config/env.js";
 import { db } from "../db/client.js";
 import { recordings, transcripts } from "../db/schema/index.js";
+import { PRAANA_VAIDYA_WHISPER_PROMPT } from "../prompts/business-knowledge.js";
 import { getActiveTranscriptionProvider } from "../providers/registry.js";
 import type { TranscriptionProvider } from "../providers/types.js";
 import { PermanentJobError } from "../utils/errors.js";
@@ -11,7 +12,7 @@ import { downloadAndValidateRecording } from "./recording.pipeline.js";
 
 export async function transcribeCallRecording(
   callId: string,
-  options: { provider?: TranscriptionProvider; force?: boolean; language?: string } = {}
+  options: { provider?: TranscriptionProvider; force?: boolean; language?: string; prompt?: string } = {}
 ) {
   const [rec] = await db
     .select()
@@ -50,9 +51,12 @@ export async function transcribeCallRecording(
     }
   }
 
+  const prompt = options.prompt ?? (env.TRANSCRIPTION_PROMPT || PRAANA_VAIDYA_WHISPER_PROMPT);
+
   const result = await provider.transcribe({
     filePath: downloaded.filePath,
     language: options.language ?? (env.TRANSCRIPTION_LANGUAGE || undefined),
+    prompt,
   });
 
   const cleanText = result.text.trim();
