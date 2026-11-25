@@ -8,6 +8,13 @@
       "when": 1795194428006,
       "tag": "0000_overjoyed_shockwave",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1795619710853,
+      "tag": "0001_many_garia",
+      "breakpoints": true
     }
   ]
 }

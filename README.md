@@ -1,50 +1,100 @@
 # SmartFlow Intelligence MCP
 
-Private call-center intelligence system connecting **Tata Tele Business Services Smartflo** call records and recordings to transcription, structured AI conversation analysis, deterministic SQL analytics, and a read-only MCP server.
+Multi-account call-center intelligence system connecting **Tata Tele Business Services Smartflo** accounts (call records & recordings) to transcription, structured AI conversation analysis, deterministic SQL analytics, and a read-only **Remote HTTP MCP server** for Claude.
 
 ## Quick Start
 
-1. **Configure credentials in `.env`** (never commit `.env`):
-   - `SMARTFLOW_API_KEY`: Your Smartflo Portal API Token (`API Connect → API Tokens`)
-   - `GROQ_API_KEY`: Your Groq API key (used by default for `whisper-large-v3-turbo` transcription and `llama-3.3-70b-versatile` analysis)
+1. **Configure `.env`** (never commit `.env`):
+   - `DATABASE_URL`: Postgres connection string
+   - `ENCRYPTION_KEY`: 64-char hex key for AES-256-GCM encryption of Smartflo credentials & PII
+   - `MCP_API_KEY`: Bootstrap admin API key for managing accounts and issuing client keys
+   - `GROQ_API_KEY` (or OpenAI/Gemini): Transcription & call analysis provider key
+   - Optional default account credentials: `SMARTFLOW_API_KEY` (or `SMARTFLOW_EMAIL` + `SMARTFLOW_PASSWORD`)
 
-2. **Database & Redis**:
-   - Local containers (`smartflow-postgres` on `5432`, `smartflow-redis` on `6379`) are configured in `docker-compose.yml`.
-   - Apply migrations: `npm run db:migrate`
-
-3. **Sync calls from Smartflo**:
+2. **Database & Migrations**:
    ```bash
-   npm run sync:calls -- --from 2026-11-20 --to 2026-11-20
+   npm run db:migrate
    ```
 
-4. **Process (download → transcribe → analyze) a single call**:
+3. **Run HTTP + MCP Server & Background Workers**:
    ```bash
-   npm run process:call -- <call-uuid>
+   npm run dev      # Fastify HTTP API + /mcp endpoint on :8080
+   npm run worker   # BullMQ multi-account sync & analysis workers
    ```
 
-5. **Run HTTP API or Background Workers**:
+## Multi-Account Setup (Smartflo)
+
+1. **Add a Smartflo account** (using your admin key):
    ```bash
-   npm run dev      # Fastify HTTP API on :8080
-   npm run worker   # BullMQ background workers
+   curl -X POST https://your-server.example.com/api/v1/accounts \
+     -H "Authorization: Bearer $MCP_API_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "name": "Acme Sales",
+       "slug": "acme-sales",
+       "timezone": "Asia/Kolkata",
+       "smartfloApiKey": "YOUR_SMARTFLO_PORTAL_TOKEN",
+       "smartfloWebhookSecret": "optional-webhook-secret"
+     }'
    ```
 
-6. **Connect as a Local MCP STDIO Server**:
-   ```json
-   {
-     "mcpServers": {
-       "smartflow-intelligence": {
-         "command": "node",
-         "args": ["/home/ashok/Desktop/smartflow-mcp/dist/mcp-stdio.js"],
-         "env": { "NODE_ENV": "production", "MCP_STDIO": "true" }
-       }
-     }
-   }
+2. **Issue a client-scoped API key** (strictly isolated to that Smartflo account):
+   ```bash
+   curl -X POST https://your-server.example.com/api/v1/accounts/acme-sales/api-keys \
+     -H "Authorization: Bearer $MCP_API_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{ "name": "Acme Claude Key" }'
    ```
+   Or issue an **admin API key** (can access and switch across all accounts):
+   ```bash
+   curl -X POST https://your-server.example.com/api/v1/admin/api-keys \
+     -H "Authorization: Bearer $MCP_API_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{ "name": "Ops Admin Claude Key" }'
+   ```
+
+3. **Per-account Smartflo Webhook URL**:
+   - Point each Smartflo account's webhook to: `POST https://your-server.example.com/api/v1/webhooks/smartflow/<account-slug>`
+   - Pass header `x-webhook-secret` if configured on the account.
+
+## Connecting Claude (MCP Config)
+
+Use the remote Streamable HTTP endpoint (`POST /mcp`) in your Claude MCP configuration:
+
+### Admin (can list and query any Smartflo account via `list_accounts` + `account` param)
+```json
+{
+  "mcpServers": {
+    "smartflow": {
+      "type": "http",
+      "url": "https://your-server.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer sf_adm_YOUR_ADMIN_KEY"
+      }
+    }
+  }
+}
+```
+
+### Single Client (strictly isolated to their own Smartflo account)
+```json
+{
+  "mcpServers": {
+    "smartflow": {
+      "type": "http",
+      "url": "https://your-server.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer sf_acc_CLIENT_KEY"
+      }
+    }
+  }
+}
+```
 
 ## Tests & Build
 
 ```bash
+npm run typecheck
 npm run build
 npm test
 ```
-

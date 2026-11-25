@@ -1,14 +1,12 @@
-import { getOrCreateDefaultTenant } from "../db/client.js";
 import { logger } from "../utils/logger.js";
 import { createQueues } from "./queues.js";
 
 /**
- * Registers repeatable BullMQ jobs:
+ * Registers repeatable BullMQ jobs across all active Smartflo accounts:
  * 1) Incremental Smartflo reconciliation every 15 minutes (re-fetches last 60 min with overlap).
  * 2) Nightly reconciliation at 20:00 IST (14:30 UTC).
  */
 export async function registerScheduledJobs() {
-  const tenant = await getOrCreateDefaultTenant();
   const { syncQueue } = createQueues();
 
   await syncQueue.upsertJobScheduler(
@@ -17,7 +15,7 @@ export async function registerScheduledJobs() {
     {
       name: "sync-recent-window",
       data: {
-        tenantId: tenant.id,
+        syncAllTenants: true,
         syncType: "reconciliation",
         windowMinutes: 60,
       },
@@ -30,13 +28,12 @@ export async function registerScheduledJobs() {
     {
       name: "sync-full-day-reconcile",
       data: {
-        tenantId: tenant.id,
+        syncAllTenants: true,
         syncType: "nightly_reconciliation",
         windowMinutes: 24 * 60,
       },
     }
   );
 
-  logger.info({ tenantId: tenant.id }, "Registered BullMQ repeatable sync & reconciliation schedules");
+  logger.info("Registered BullMQ repeatable multi-account sync & reconciliation schedules");
 }
-

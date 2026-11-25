@@ -5,6 +5,7 @@ import { callAnalyses, calls, recordings } from "../db/schema/index.js";
 import { analyzeCallTranscript } from "../pipeline/analysis.pipeline.js";
 import { downloadAndValidateRecording } from "../pipeline/recording.pipeline.js";
 import { transcribeCallRecording } from "../pipeline/transcription.pipeline.js";
+import { listSyncableTenants } from "../services/account.service.js";
 import { syncCallsWindow } from "../services/sync.service.js";
 import { PermanentJobError } from "../utils/errors.js";
 import { logger } from "../utils/logger.js";
@@ -27,44 +28,80 @@ async function main() {
   const syncWorker = new Worker(
     "smartflow-sync",
     async (job) => {
-      const { from, to, windowMinutes, tenantId, syncType } = job.data as {
+      const { from, to, windowMinutes, tenantId, syncAllTenants, syncType } = job.data as {
         from?: string;
         to?: string;
         windowMinutes?: number;
         tenantId?: string;
+        syncAllTenants?: boolean;
         syncType?: string;
       };
       const toDate = to ? new Date(to) : new Date();
       const fromDate = from
         ? new Date(from)
         : new Date(toDate.getTime() - (windowMinutes ?? 60) * 60 * 1000);
-      const summary = await wrapPermanentErrors(() =>
-        syncCallsWindow({
-          from: fromDate,
-          to: toDate,
-          tenantId,
-          syncType: syncType ?? "scheduled",
-        })
-      );
 
-      // Enqueue pending answered recordings automatically (deterministic jobId prevents duplicates)
-      const pending = await db
-        .select({ recordingId: recordings.id, callId: calls.id })
-        .from(calls)
-        .innerJoin(recordings, eq(recordings.callId, calls.id))
-        .leftJoin(callAnalyses, eq(callAnalyses.callId, calls.id))
-        .where(and(eq(calls.status, "answered"), isNull(callAnalyses.id)))
-        .limit(50);
+      const targetTenantIds: string[] = tenantId
+        ? [tenantId]
+        : syncAllTenants
+          ? (await listSyncableTenants()).map((t) => t.id)
+          : [];
 
-      for (const item of pending) {
-        await queues.recordingQueue.add(
-          "process-recording",
-          { recordingId: item.recordingId, callId: item.callId },
-          { jobId: `rec-${item.recordingId}` }
+      const summaries: Array<Record<string, unknown>> = [];
+      let totalEnqueued = 0;
+
+      const runForTenant = async (tid?: string) => {
+        const summary = await wrapPermanentErrors(() =>
+          syncCallsWindow({
+            from: fromDate,
+            to: toDate,
+            tenantId: tid,
+            syncType: syncType ?? "scheduled",
+          })
         );
+
+        const pendingWhere = tid
+          ? and(eq(calls.tenantId, tid), eq(calls.status, "answered"), isNull(callAnalyses.id))
+          : and(eq(calls.status, "answered"), isNull(callAnalyses.id));
+
+        const pending = await db
+          .select({ recordingId: recordings.id, callId: calls.id })
+          .from(calls)
+          .innerJoin(recordings, eq(recordings.callId, calls.id))
+          .leftJoin(callAnalyses, eq(callAnalyses.callId, calls.id))
+          .where(pendingWhere)
+          .limit(50);
+
+        for (const item of pending) {
+          await queues.recordingQueue.add(
+            "process-recording",
+            { recordingId: item.recordingId, callId: item.callId },
+            { jobId: `rec-${item.recordingId}` }
+          );
+        }
+
+        totalEnqueued += pending.length;
+        summaries.push({ tenantId: tid ?? "default", ...summary, enqueuedRecordings: pending.length });
+      };
+
+      if (targetTenantIds.length === 0) {
+        await runForTenant(undefined);
+      } else {
+        for (const tid of targetTenantIds) {
+          try {
+            await runForTenant(tid);
+          } catch (err) {
+            logger.error({ tenantId: tid, err }, "Multi-account scheduled sync failed for tenant");
+            summaries.push({
+              tenantId: tid,
+              status: "failed",
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
       }
 
-      return { ...summary, enqueuedRecordings: pending.length };
+      return { tenantsProcessed: summaries.length, totalEnqueued, summaries };
     },
     { connection, concurrency: 1 }
   );

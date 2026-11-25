@@ -20,21 +20,65 @@ import { analyzeCallTranscript } from "../pipeline/analysis.pipeline.js";
 import { transcribeCallRecording } from "../pipeline/transcription.pipeline.js";
 import { getSafeProviderMetadata } from "../providers/registry.js";
 import { createQueues } from "../queue/queues.js";
+import {
+  authenticateApiKey,
+  createAccount,
+  createApiKeyRecord,
+  getTenantByIdentifier,
+  getWebhookSecretForTenant,
+  listAccessibleAccounts,
+  listAllAccounts,
+  listApiKeyRecords,
+  resolveTenantForContext,
+  revokeApiKeyRecord,
+  updateAccount,
+  type AuthContext,
+} from "../services/account.service.js";
 import { askCallAnalytics } from "../services/ask-analytics.service.js";
 import { recordToolAudit } from "../services/audit.service.js";
 import { generateFullDailyReport } from "../services/report.service.js";
 import { syncCallsWindow, upsertNormalizedCall } from "../services/sync.service.js";
 import { DASHBOARD_HTML } from "../ui/dashboard-html.js";
 import { getTodayYmd, validateDateRange } from "../utils/dates.js";
-import { AppError, UnauthorizedError } from "../utils/errors.js";
+import { AppError, ForbiddenError, NotFoundError, UnauthorizedError } from "../utils/errors.js";
 import { logger } from "../utils/logger.js";
 
-async function requireApiKey(req: FastifyRequest, _reply: FastifyReply) {
-  if (!env.MCP_API_KEY) return; // local dev without key set
+const requestAuthMap = new WeakMap<FastifyRequest, AuthContext>();
+
+function extractApiKeyToken(req: FastifyRequest): string {
   const header = req.headers.authorization ?? "";
-  const token = header.startsWith("Bearer ") ? header.slice(7).trim() : String(req.headers["x-api-key"] ?? "");
-  if (token !== env.MCP_API_KEY) {
-    throw new UnauthorizedError("Invalid or missing API key.");
+  if (header.startsWith("Bearer ")) {
+    return header.slice(7).trim();
+  }
+  return String(req.headers["x-api-key"] ?? "").trim();
+}
+
+function getAuthContext(req: FastifyRequest): AuthContext {
+  const ctx = requestAuthMap.get(req);
+  if (!ctx) {
+    throw new UnauthorizedError("Unauthenticated request.");
+  }
+  return ctx;
+}
+
+function extractRequestedAccount(req: FastifyRequest): string | undefined {
+  const query = req.query as Record<string, unknown> | undefined;
+  const fromQuery = typeof query?.account === "string" ? query.account : undefined;
+  const fromHeader = typeof req.headers["x-account"] === "string" ? req.headers["x-account"] : undefined;
+  return fromQuery || fromHeader;
+}
+
+async function requireApiKey(req: FastifyRequest, _reply: FastifyReply) {
+  const token = extractApiKeyToken(req);
+  const auth = await authenticateApiKey(token);
+  requestAuthMap.set(req, auth);
+}
+
+async function requireAdmin(req: FastifyRequest, reply: FastifyReply) {
+  await requireApiKey(req, reply);
+  const auth = getAuthContext(req);
+  if (auth.role !== "admin") {
+    throw new ForbiddenError("Admin API key required for this endpoint.");
   }
 }
 
@@ -75,33 +119,136 @@ export function buildApp() {
     return { status: "ok", timestamp: new Date().toISOString() };
   });
 
+  // =========================================================================
+  // Multi-Account & API Key Management
+  // =========================================================================
+
+  // List accounts (admin sees all; tenant key sees only its own account)
+  app.get("/api/v1/accounts", { preHandler: requireApiKey }, async (req) => {
+    const auth = getAuthContext(req);
+    const accounts = auth.role === "admin" ? await listAllAccounts() : await listAccessibleAccounts(auth);
+    return { role: auth.role, count: accounts.length, accounts };
+  });
+
+  // Create a Smartflo account (admin only)
+  app.post("/api/v1/accounts", { preHandler: requireAdmin }, async (req, reply) => {
+    const body = z
+      .object({
+        name: z.string().min(2).max(120),
+        slug: z.string().min(3).max(64).optional(),
+        timezone: z.string().default("Asia/Kolkata"),
+        smartfloBaseUrl: z.string().url().optional(),
+        smartfloApiKey: z.string().min(1).optional(),
+        smartfloEmail: z.string().email().optional(),
+        smartfloPassword: z.string().min(1).optional(),
+        smartfloWebhookSecret: z.string().min(1).optional(),
+      })
+      .parse(req.body);
+    const created = await createAccount(body);
+    return reply.status(201).send(created);
+  });
+
+  // Update a Smartflo account's settings or credentials (admin only)
+  app.patch("/api/v1/accounts/:account", { preHandler: requireAdmin }, async (req) => {
+    const { account } = z.object({ account: z.string().min(1) }).parse(req.params);
+    const body = z
+      .object({
+        name: z.string().min(2).max(120).optional(),
+        timezone: z.string().optional(),
+        active: z.boolean().optional(),
+        smartfloBaseUrl: z.string().url().nullable().optional(),
+        smartfloApiKey: z.string().nullable().optional(),
+        smartfloEmail: z.string().email().nullable().optional(),
+        smartfloPassword: z.string().nullable().optional(),
+        smartfloWebhookSecret: z.string().nullable().optional(),
+      })
+      .parse(req.body);
+    return updateAccount(account, body);
+  });
+
+  // List API keys (admin only; optionally filter by ?account=<slug>)
+  app.get("/api/v1/api-keys", { preHandler: requireAdmin }, async (req) => {
+    const q = z.object({ account: z.string().optional() }).parse(req.query);
+    let tenantId: string | undefined;
+    if (q.account) {
+      const tenant = await getTenantByIdentifier(q.account);
+      if (!tenant) throw new NotFoundError(`Account "${q.account}" not found.`);
+      tenantId = tenant.id;
+    }
+    const keys = await listApiKeyRecords(tenantId);
+    return { count: keys.length, keys };
+  });
+
+  // Issue a client-scoped API key bound to a single Smartflo account (admin only)
+  app.post("/api/v1/accounts/:account/api-keys", { preHandler: requireAdmin }, async (req, reply) => {
+    const { account } = z.object({ account: z.string().min(1) }).parse(req.params);
+    const body = z.object({ name: z.string().min(2).max(120) }).parse(req.body);
+    const created = await createApiKeyRecord({
+      name: body.name,
+      role: "tenant",
+      accountIdentifier: account,
+    });
+    return reply.status(201).send({
+      ...created,
+      note: "Save this apiKey now; it will not be shown again.",
+    });
+  });
+
+  // Issue an admin API key that can access all Smartflo accounts (admin only)
+  app.post("/api/v1/admin/api-keys", { preHandler: requireAdmin }, async (req, reply) => {
+    const body = z.object({ name: z.string().min(2).max(120) }).parse(req.body);
+    const created = await createApiKeyRecord({
+      name: body.name,
+      role: "admin",
+    });
+    return reply.status(201).send({
+      ...created,
+      note: "Save this apiKey now; it will not be shown again.",
+    });
+  });
+
+  // Revoke an API key (admin only)
+  app.delete("/api/v1/api-keys/:id", { preHandler: requireAdmin }, async (req) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    return revokeApiKeyRecord(id);
+  });
+
+  // =========================================================================
+  // Sync & Analytics Endpoints (Tenant-Scoped)
+  // =========================================================================
+
   // Sync status
-  app.get("/api/v1/sync/status", { preHandler: requireApiKey }, async () => {
-    const tenant = await getOrCreateDefaultTenant();
+  app.get("/api/v1/sync/status", { preHandler: requireApiKey }, async (req) => {
+    const tenant = await resolveTenantForContext(getAuthContext(req), extractRequestedAccount(req));
     const recent = await db
       .select()
       .from(syncLogs)
       .where(eq(syncLogs.tenantId, tenant.id))
       .orderBy(desc(syncLogs.startedAt))
       .limit(10);
-    return { tenantId: tenant.id, recentSyncs: recent };
+    return { tenantId: tenant.id, accountSlug: tenant.slug, recentSyncs: recent };
   });
 
-  // Trigger bounded sync
+  // Trigger bounded sync for an account
   app.post("/api/v1/sync/calls", { preHandler: requireApiKey }, async (req) => {
     const body = z
       .object({
+        account: z.string().max(120).optional(),
         from: z.string().datetime({ offset: true }),
         to: z.string().datetime({ offset: true }),
       })
       .parse(req.body);
+    const tenant = await resolveTenantForContext(
+      getAuthContext(req),
+      body.account ?? extractRequestedAccount(req)
+    );
     const range = validateDateRange(body.from, body.to, 31);
-    return syncCallsWindow({ from: range.from, to: range.to, syncType: "manual" });
+    return syncCallsWindow({ tenantId: tenant.id, from: range.from, to: range.to, syncType: "manual" });
   });
 
   // Daily report (supports ?insights=true for full report with AI insights)
   app.get("/api/v1/reports/daily", { preHandler: requireApiKey }, async (req) => {
-    const tenant = await getOrCreateDefaultTenant();
+    const tenant = await resolveTenantForContext(getAuthContext(req), extractRequestedAccount(req));
     const q = z
       .object({
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -119,7 +266,7 @@ export function buildApp() {
 
   // Agent report
   app.get("/api/v1/reports/agents", { preHandler: requireApiKey }, async (req) => {
-    const tenant = await getOrCreateDefaultTenant();
+    const tenant = await resolveTenantForContext(getAuthContext(req), extractRequestedAccount(req));
     const q = z
       .object({
         from: z.string().datetime({ offset: true }),
@@ -138,7 +285,7 @@ export function buildApp() {
 
   // Conversion funnel
   app.get("/api/v1/reports/conversions", { preHandler: requireApiKey }, async (req) => {
-    const tenant = await getOrCreateDefaultTenant();
+    const tenant = await resolveTenantForContext(getAuthContext(req), extractRequestedAccount(req));
     const q = z
       .object({
         from: z.string().datetime({ offset: true }),
@@ -151,7 +298,7 @@ export function buildApp() {
 
   // Distinct branches/departments for filter dropdown
   app.get("/api/v1/departments", { preHandler: requireApiKey }, async (req) => {
-    const tenant = await getOrCreateDefaultTenant();
+    const tenant = await resolveTenantForContext(getAuthContext(req), extractRequestedAccount(req));
     const q = z
       .object({
         from: z.string().datetime({ offset: true }),
@@ -164,7 +311,7 @@ export function buildApp() {
 
   // Search calls
   app.get("/api/v1/calls", { preHandler: requireApiKey }, async (req) => {
-    const tenant = await getOrCreateDefaultTenant();
+    const tenant = await resolveTenantForContext(getAuthContext(req), extractRequestedAccount(req));
     const q = z
       .object({
         from: z.string().datetime({ offset: true }),
@@ -195,7 +342,7 @@ export function buildApp() {
 
   // Call detail
   app.get("/api/v1/calls/:id", { preHandler: requireApiKey }, async (req) => {
-    const tenant = await getOrCreateDefaultTenant();
+    const tenant = await resolveTenantForContext(getAuthContext(req), extractRequestedAccount(req));
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
     return getCallDetails(tenant.id, id);
   });
@@ -203,12 +350,13 @@ export function buildApp() {
   // Protected transcript (audit logged)
   app.get("/api/v1/calls/:id/transcript", { preHandler: requireApiKey }, async (req) => {
     const start = Date.now();
-    const tenant = await getOrCreateDefaultTenant();
+    const auth = getAuthContext(req);
+    const tenant = await resolveTenantForContext(auth, extractRequestedAccount(req));
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
     const transcript = await getCallTranscript(tenant.id, id);
     await recordToolAudit({
       tenantId: tenant.id,
-      actor: "http-api",
+      actor: auth.actor,
       toolName: "GET /api/v1/calls/:id/transcript",
       parameters: { callId: id },
       outcome: "success",
@@ -217,9 +365,18 @@ export function buildApp() {
     return transcript;
   });
 
-  // Trigger transcription + analysis for a call
+  // Trigger transcription + analysis for a call (verified against caller's tenant)
   app.post("/api/v1/calls/:id/analyze", { preHandler: requireApiKey }, async (req) => {
+    const tenant = await resolveTenantForContext(getAuthContext(req), extractRequestedAccount(req));
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const owned = await db
+      .select({ id: calls.id })
+      .from(calls)
+      .where(and(eq(calls.id, id), eq(calls.tenantId, tenant.id)))
+      .limit(1);
+    if (!owned[0]) {
+      throw new NotFoundError(`Call "${id}" not found in account "${tenant.slug ?? tenant.name}".`);
+    }
     await transcribeCallRecording(id);
     const analysis = await analyzeCallTranscript(id);
     return { status: "completed", analysisId: analysis.id };
@@ -228,9 +385,10 @@ export function buildApp() {
   // Natural-language analytics Q&A bot endpoint (audit logged)
   app.post("/api/v1/ask", { preHandler: requireApiKey }, async (req) => {
     const start = Date.now();
-    const tenant = await getOrCreateDefaultTenant();
+    const auth = getAuthContext(req);
     const body = z
       .object({
+        account: z.string().max(120).optional(),
         question: z.string().min(3).max(500),
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         from: z.string().datetime({ offset: true }).optional(),
@@ -238,6 +396,7 @@ export function buildApp() {
         timezone: z.string().optional(),
       })
       .parse(req.body);
+    const tenant = await resolveTenantForContext(auth, body.account ?? extractRequestedAccount(req));
 
     const range = body.from && body.to ? validateDateRange(body.from, body.to) : undefined;
     const result = await askCallAnalytics({
@@ -251,9 +410,9 @@ export function buildApp() {
 
     await recordToolAudit({
       tenantId: tenant.id,
-      actor: "dashboard-bot",
+      actor: auth.actor,
       toolName: "POST /api/v1/ask",
-      parameters: { question: body.question, date: body.date },
+      parameters: { question: body.question, date: body.date, account: tenant.slug },
       outcome: "success",
       durationMs: Date.now() - start,
     });
@@ -291,10 +450,16 @@ export function buildApp() {
 
   // Enqueue pending answered calls (or process inline batch on Vercel serverless when Redis is absent)
   app.post("/api/v1/queues/enqueue-pending", { preHandler: requireApiKey }, async (req) => {
-    const tenant = await getOrCreateDefaultTenant();
     const body = z
-      .object({ limit: z.number().int().min(1).max(200).default(50) })
+      .object({
+        account: z.string().max(120).optional(),
+        limit: z.number().int().min(1).max(200).default(50),
+      })
       .parse(req.body ?? {});
+    const tenant = await resolveTenantForContext(
+      getAuthContext(req),
+      body.account ?? extractRequestedAccount(req)
+    );
 
     const allPending = await db
       .select({ recordingId: recordings.id, callId: calls.id })
@@ -351,7 +516,7 @@ export function buildApp() {
     };
   });
 
-  // Smartflo webhook receiver (fast 200 OK; Smartflo retries only twice)
+  // Smartflo webhook receiver (default account, backward compatible)
   app.post("/api/v1/webhooks/smartflow", async (req, reply) => {
     if (env.SMARTFLOW_WEBHOOK_SECRET) {
       const provided = String(req.headers["x-webhook-secret"] ?? "");
@@ -362,13 +527,40 @@ export function buildApp() {
     const tenant = await getOrCreateDefaultTenant();
     const { call } = parseSmartfloWebhook(req.body, tenant.timezone);
     const result = await upsertNormalizedCall(tenant.id, call);
-    logger.info({ callId: result.callId, externalId: call.externalId, isNew: result.isNew }, "Smartflo webhook ingested");
+    logger.info(
+      { tenantId: tenant.id, callId: result.callId, externalId: call.externalId, isNew: result.isNew },
+      "Smartflo webhook ingested"
+    );
     return reply.status(200).send({ received: true, callId: result.callId });
   });
 
-  // Authenticated Streamable HTTP MCP endpoint (stateless per-request)
+  // Smartflo webhook receiver for a specific account slug or UUID
+  app.post("/api/v1/webhooks/smartflow/:account", async (req, reply) => {
+    const { account } = z.object({ account: z.string().min(1) }).parse(req.params);
+    const tenant = await getTenantByIdentifier(account);
+    if (!tenant || !tenant.active) {
+      throw new NotFoundError(`Smartflo account "${account}" not found or inactive.`);
+    }
+    const expectedSecret = getWebhookSecretForTenant(tenant);
+    if (expectedSecret) {
+      const provided = String(req.headers["x-webhook-secret"] ?? "");
+      if (provided !== expectedSecret) {
+        throw new UnauthorizedError("Invalid webhook secret.");
+      }
+    }
+    const { call } = parseSmartfloWebhook(req.body, tenant.timezone);
+    const result = await upsertNormalizedCall(tenant.id, call);
+    logger.info(
+      { tenantId: tenant.id, accountSlug: tenant.slug, callId: result.callId, externalId: call.externalId, isNew: result.isNew },
+      "Smartflo account webhook ingested"
+    );
+    return reply.status(200).send({ received: true, accountSlug: tenant.slug, callId: result.callId });
+  });
+
+  // Authenticated Streamable HTTP MCP endpoint (stateless per-request, multi-account aware)
   app.post("/mcp", { preHandler: requireApiKey }, async (req, reply) => {
-    const mcpServer = createMcpServer("mcp-http");
+    const auth = getAuthContext(req);
+    const mcpServer = createMcpServer(auth);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
     });
@@ -384,4 +576,3 @@ export function buildApp() {
 
   return app;
 }
-

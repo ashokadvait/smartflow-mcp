@@ -22,11 +22,40 @@ export const tenants = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     name: text("name").notNull(),
+    slug: text("slug"),
     timezone: text("timezone").notNull().default("Asia/Kolkata"),
+    active: boolean("active").notNull().default(true),
+    smartfloBaseUrl: text("smartflo_base_url"),
+    smartfloApiKeyEncrypted: text("smartflo_api_key_encrypted"),
+    smartfloEmailEncrypted: text("smartflo_email_encrypted"),
+    smartfloPasswordEncrypted: text("smartflo_password_encrypted"),
+    smartfloWebhookSecretEncrypted: text("smartflo_webhook_secret_encrypted"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [uniqueIndex("tenants_name_unique").on(t.name)]
+  (t) => [
+    uniqueIndex("tenants_name_unique").on(t.name),
+    uniqueIndex("tenants_slug_unique").on(t.slug),
+  ]
+);
+
+export const apiKeys = pgTable(
+  "api_keys",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: text("name").notNull(),
+    keyPrefix: text("key_prefix").notNull(),
+    keyHash: text("key_hash").notNull(),
+    role: text("role").notNull().default("tenant"), // admin | tenant
+    tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }),
+    active: boolean("active").notNull().default(true),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("api_keys_hash_unique").on(t.keyHash),
+    index("api_keys_tenant_id_idx").on(t.tenantId),
+  ]
 );
 
 export const agents = pgTable(

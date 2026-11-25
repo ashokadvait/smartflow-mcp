@@ -12,6 +12,7 @@ import {
 } from "../src/providers/types.js";
 import { formatForSmartfloQuery, getDayBoundsUtc, parseSmartfloTimestamp, validateDateRange } from "../src/utils/dates.js";
 import { decryptSecret, encryptSecret, hashPhone, maskPhone, redactParameters } from "../src/utils/pii.js";
+import { generateRawApiKey, hashApiKey, normalizeSlug, toSafeAccountSummary } from "../src/services/account.service.js";
 
 describe("Date & Timezone utilities", () => {
   it("parses Smartflo IST timestamp to exact UTC Date", () => {
@@ -277,6 +278,48 @@ describe("Praana Vaidya Whisper prompt & Business Knowledge Base", () => {
     expect(parsed.compliance.riskLevel).toBe("high");
     expect(parsed.missedOpportunities).toHaveLength(1);
     expect(parsed.productKnowledgeCheck?.status).toBe("correct");
+  });
+});
+
+describe("Multi-account helpers & API key generation", () => {
+  it("normalizes account slugs and rejects invalid ones", () => {
+    expect(normalizeSlug("Acme Sales Team")).toBe("acme-sales-team");
+    expect(normalizeSlug("  branch_01  ")).toBe("branch_01");
+    expect(() => normalizeSlug("a")).toThrow();
+  });
+
+  it("generates distinct prefixed API keys with matching SHA-256 hashes", () => {
+    const adminKey = generateRawApiKey("admin");
+    const tenantKey = generateRawApiKey("tenant");
+
+    expect(adminKey.rawKey.startsWith("sf_adm_")).toBe(true);
+    expect(tenantKey.rawKey.startsWith("sf_acc_")).toBe(true);
+    expect(adminKey.hash).toBe(hashApiKey(adminKey.rawKey));
+    expect(tenantKey.hash).toBe(hashApiKey(tenantKey.rawKey));
+    expect(adminKey.hash).not.toBe(tenantKey.hash);
+  });
+
+  it("returns safe account summary without exposing encrypted credentials", () => {
+    const now = new Date();
+    const summary = toSafeAccountSummary({
+      id: "11111111-1111-1111-1111-111111111111",
+      name: "Acme Sales",
+      slug: "acme-sales",
+      timezone: "Asia/Kolkata",
+      active: true,
+      smartfloBaseUrl: "https://api-smartflo.tatateleservices.com/v1",
+      smartfloApiKeyEncrypted: "iv:tag:ciphertext",
+      smartfloEmailEncrypted: null,
+      smartfloPasswordEncrypted: null,
+      smartfloWebhookSecretEncrypted: "iv:tag:secret",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    expect(summary.hasSmartfloCredentials).toBe(true);
+    expect(summary.hasWebhookSecret).toBe(true);
+    expect(JSON.stringify(summary)).not.toContain("ciphertext");
+    expect(JSON.stringify(summary)).not.toContain("iv:tag");
   });
 });
 

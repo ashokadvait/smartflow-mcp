@@ -5,6 +5,7 @@ import { SmartFlowClient } from "../integrations/smartflow/client.js";
 import type { SmartFlowAgent, SmartFlowCall } from "../integrations/smartflow/types.js";
 import { logger } from "../utils/logger.js";
 import { encryptSecret, hashPhone, normalizePhone } from "../utils/pii.js";
+import { getSmartFlowClientForTenant } from "./account.service.js";
 
 export interface SyncSummary {
   syncLogId: string;
@@ -249,10 +250,19 @@ export async function syncCallsWindow(params: {
   syncAgentsFirst?: boolean;
   client?: SmartFlowClient;
 }): Promise<SyncSummary> {
-  const tenant = params.tenantId
-    ? { id: params.tenantId, timezone: "Asia/Kolkata" }
-    : await getOrCreateDefaultTenant();
-  const client = params.client ?? new SmartFlowClient();
+  const targetTenantId = params.tenantId ?? (await getOrCreateDefaultTenant()).id;
+  let tenant: { id: string; timezone: string };
+  let client: SmartFlowClient;
+
+  if (params.client) {
+    const def = await getOrCreateDefaultTenant();
+    tenant = { id: targetTenantId, timezone: def.timezone };
+    client = params.client;
+  } else {
+    const resolved = await getSmartFlowClientForTenant(targetTenantId);
+    tenant = { id: resolved.tenant.id, timezone: resolved.tenant.timezone };
+    client = resolved.client;
+  }
 
   const [logRow] = await db
     .insert(syncLogs)
