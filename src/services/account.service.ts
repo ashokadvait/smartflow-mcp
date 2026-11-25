@@ -70,7 +70,7 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 export function toSafeAccountSummary(row: TenantRow): SafeAccountSummary {
-  const isDefault = row.name === env.DEFAULT_TENANT_NAME;
+  const isDefault = row.name === env.DEFAULT_TENANT_NAME || row.slug === "default-tenant";
   const hasDbCreds = Boolean(
     row.smartfloApiKeyEncrypted || (row.smartfloEmailEncrypted && row.smartfloPasswordEncrypted)
   );
@@ -291,6 +291,54 @@ export async function createAccount(input: {
     .returning();
 
   return toSafeAccountSummary(inserted!);
+}
+
+export async function getAccountCredentialsForEdit(identifier: string): Promise<{
+  id: string;
+  name: string;
+  slug: string | null;
+  timezone: string;
+  active: boolean;
+  smartfloBaseUrl: string;
+  smartfloApiKey: string;
+  smartfloEmail: string;
+  hasSmartfloPassword: boolean;
+  smartfloWebhookSecret: string;
+}> {
+  const row = await getTenantByIdentifier(identifier);
+  if (!row) {
+    throw new NotFoundError(`Account "${identifier}" not found.`);
+  }
+  const isDefault = row.name === env.DEFAULT_TENANT_NAME || row.slug === "default-tenant";
+  const smartfloApiKey = row.smartfloApiKeyEncrypted
+    ? decryptSecret(row.smartfloApiKeyEncrypted)
+    : isDefault
+      ? env.SMARTFLOW_API_KEY
+      : "";
+  const smartfloEmail = row.smartfloEmailEncrypted
+    ? decryptSecret(row.smartfloEmailEncrypted)
+    : isDefault
+      ? env.SMARTFLOW_EMAIL
+      : "";
+  const hasSmartfloPassword = Boolean(row.smartfloPasswordEncrypted || (isDefault && env.SMARTFLOW_PASSWORD));
+  const smartfloWebhookSecret = row.smartfloWebhookSecretEncrypted
+    ? decryptSecret(row.smartfloWebhookSecretEncrypted)
+    : isDefault
+      ? env.SMARTFLOW_WEBHOOK_SECRET
+      : "";
+
+  return {
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    timezone: row.timezone,
+    active: row.active,
+    smartfloBaseUrl: row.smartfloBaseUrl || env.SMARTFLOW_BASE_URL,
+    smartfloApiKey,
+    smartfloEmail,
+    hasSmartfloPassword,
+    smartfloWebhookSecret,
+  };
 }
 
 export async function updateAccount(

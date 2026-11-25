@@ -24,6 +24,7 @@ import {
   authenticateApiKey,
   createAccount,
   createApiKeyRecord,
+  getAccountCredentialsForEdit,
   getTenantByIdentifier,
   getWebhookSecretForTenant,
   listAccessibleAccounts,
@@ -154,6 +155,12 @@ export function buildApp() {
       .parse(req.body);
     const created = await createAccount(body);
     return reply.status(201).send(created);
+  });
+
+  // Get an account's decrypted credentials for admin edit form (admin only)
+  app.get("/api/v1/accounts/:account/credentials", { preHandler: requireAdmin }, async (req) => {
+    const { account } = z.object({ account: z.string().min(1) }).parse(req.params);
+    return getAccountCredentialsForEdit(account);
   });
 
   // Update a Smartflo account's settings or credentials (admin only)

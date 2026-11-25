@@ -712,8 +712,15 @@
             <input type="text" id="editOrgTz" value="Asia/Kolkata" />
           </div>
           <div class="form-field">
-            <label>New Smartflo API Token (leave blank to keep)</label>
-            <input type="password" id="editOrgApiKey" placeholder="Optional new token..." />
+            <label>Smartflo Portal API Token</label>
+            <div style="display:flex;gap:6px;">
+              <input type="password" id="editOrgApiKey" placeholder="Paste Smartflo API token..." style="flex:1;" />
+              <button type="button" id="toggleEditApiKeyBtn" class="sm">Show</button>
+            </div>
+          </div>
+          <div class="form-field">
+            <label>Smartflo Email (optional)</label>
+            <input type="email" id="editOrgEmail" placeholder="user@org.com" />
           </div>
           <div class="form-field">
             <label>Status</label>
@@ -1538,18 +1545,31 @@
       });
 
       document.querySelectorAll("button[data-edit-org]").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const target = accounts.find((a) => a.id === btn.dataset.editOrg);
-          if (!target) return;
-          document.getElementById("editOrgId").value = target.id;
-          document.getElementById("editOrgOldSlug").value = target.slug || target.id;
-          document.getElementById("editOrgName").value = target.name || "";
-          document.getElementById("editOrgSlug").value = target.slug || "";
-          document.getElementById("editOrgTz").value = target.timezone || "Asia/Kolkata";
-          document.getElementById("editOrgApiKey").value = "";
-          document.getElementById("editOrgActive").value = target.active ? "true" : "false";
-          document.getElementById("editOrgCard").style.display = "block";
-          document.getElementById("editOrgName").focus();
+        btn.addEventListener("click", async () => {
+          const targetId = btn.dataset.editOrg;
+          btn.disabled = true;
+          try {
+            const creds = await apiFetch(`/api/v1/accounts/${encodeURIComponent(targetId)}/credentials`, {
+              skipAccountHeader: true,
+            });
+            document.getElementById("editOrgId").value = creds.id;
+            document.getElementById("editOrgOldSlug").value = creds.slug || creds.id;
+            document.getElementById("editOrgName").value = creds.name || "";
+            document.getElementById("editOrgSlug").value = creds.slug || "";
+            document.getElementById("editOrgTz").value = creds.timezone || "Asia/Kolkata";
+            const apiKeyInput = document.getElementById("editOrgApiKey");
+            apiKeyInput.type = "password";
+            apiKeyInput.value = creds.smartfloApiKey || "";
+            document.getElementById("toggleEditApiKeyBtn").textContent = "Show";
+            document.getElementById("editOrgEmail").value = creds.smartfloEmail || "";
+            document.getElementById("editOrgActive").value = creds.active ? "true" : "false";
+            document.getElementById("editOrgCard").style.display = "block";
+            document.getElementById("editOrgName").focus();
+          } catch (e) {
+            showAccountsMsg(`Failed to load organization details: ${e.message}`, true);
+          } finally {
+            btn.disabled = false;
+          }
         });
       });
 
@@ -1639,6 +1659,13 @@
       document.getElementById("editOrgCard").style.display = "none";
     });
 
+    document.getElementById("toggleEditApiKeyBtn").addEventListener("click", (ev) => {
+      const input = document.getElementById("editOrgApiKey");
+      const showing = input.type === "text";
+      input.type = showing ? "password" : "text";
+      ev.target.textContent = showing ? "Show" : "Hide";
+    });
+
     document.getElementById("saveEditOrgBtn").addEventListener("click", async (ev) => {
       const btn = ev.target;
       const id = document.getElementById("editOrgId").value;
@@ -1647,6 +1674,7 @@
       const slug = document.getElementById("editOrgSlug").value.trim();
       const timezone = document.getElementById("editOrgTz").value.trim() || "Asia/Kolkata";
       const smartfloApiKey = document.getElementById("editOrgApiKey").value.trim();
+      const smartfloEmail = document.getElementById("editOrgEmail").value.trim();
       const active = document.getElementById("editOrgActive").value === "true";
 
       if (!name) {
@@ -1660,6 +1688,7 @@
         const payload = { name, timezone, active };
         if (slug) payload.slug = slug;
         if (smartfloApiKey) payload.smartfloApiKey = smartfloApiKey;
+        if (smartfloEmail) payload.smartfloEmail = smartfloEmail;
 
         const updated = await apiFetch(`/api/v1/accounts/${encodeURIComponent(id)}`, {
           method: "PATCH",
