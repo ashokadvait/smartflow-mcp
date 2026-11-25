@@ -489,6 +489,50 @@
       border-top: 1px solid var(--border);
     }
     .bot-footer input { flex: 1; }
+
+    /* Accounts & Keys Modal */
+    .modal.modal-wide { max-width: 880px; }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .form-field { display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; color: var(--muted); }
+    .form-field input, .form-field select { width: 100%; }
+    .key-reveal {
+      background: rgba(34, 197, 94, 0.12);
+      border: 1px solid rgba(34, 197, 94, 0.45);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 14px;
+      font-size: 0.84rem;
+    }
+    .key-reveal code {
+      display: inline-block;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      color: #86efac;
+      word-break: break-all;
+    }
+    .org-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(79, 140, 255, 0.14);
+      border: 1px solid rgba(79, 140, 255, 0.4);
+      color: #bfdbfe;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+    button.danger { border-color: rgba(239, 68, 68, 0.45); color: #fca5a5; }
+    button.danger:hover { border-color: var(--red); background: rgba(239, 68, 68, 0.15); }
+    button.sm { padding: 4px 9px; font-size: 0.76rem; }
   </style>
 </head>
 <body>
@@ -498,10 +542,13 @@
       <span>SmartFlow Intelligence</span>
     </div>
     <div class="controls">
+      <select id="accountSwitcher" style="display:none;" title="Switch Smartflo Organization"></select>
+      <span id="singleAccountPill" class="org-pill" style="display:none;"></span>
       <input type="date" id="datePicker" />
       <button id="refreshBtn" class="primary">Refresh</button>
       <button id="syncBtn">Sync Day</button>
       <button id="enqueueBtn">Process Pending (All)</button>
+      <button id="accountsBtn" style="display:none;" title="Manage Organizations &amp; Claude API Keys">Accounts &amp; Keys</button>
       <button id="keyBtn" title="Change API Key">API Key</button>
     </div>
   </header>
@@ -630,6 +677,101 @@
     </div>
   </div>
 
+  <!-- Admin Multi-Account & Claude API Keys Modal -->
+  <div id="accountsModal" class="modal-backdrop">
+    <div class="modal modal-wide">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <div>
+          <h2 style="margin:0;">Organizations &amp; Claude MCP Keys</h2>
+          <div class="muted" style="margin-top:2px;">MCP URL for Claude: <code id="mcpUrlDisplay"></code></div>
+        </div>
+        <button id="closeAccountsModalBtn">Close</button>
+      </div>
+
+      <div id="accountsMsg" class="banner" style="display:none;margin-bottom:12px;"></div>
+      <div id="newKeyReveal" class="key-reveal" style="display:none;"></div>
+
+      <div class="card" style="margin-bottom:14px;background:var(--surface-2);">
+        <h2 style="font-size:0.92rem;margin-bottom:10px;">
+          <span>Add Smartflo Organization</span>
+          <span class="muted">Credentials are encrypted with AES-256-GCM</span>
+        </h2>
+        <div class="form-grid">
+          <div class="form-field">
+            <label>Organization Name *</label>
+            <input type="text" id="newOrgName" placeholder="e.g. Acme Clinic" />
+          </div>
+          <div class="form-field">
+            <label>Slug (used in Claude &amp; webhooks)</label>
+            <input type="text" id="newOrgSlug" placeholder="e.g. acme-clinic" />
+          </div>
+          <div class="form-field">
+            <label>Timezone</label>
+            <input type="text" id="newOrgTz" value="Asia/Kolkata" />
+          </div>
+          <div class="form-field">
+            <label>Smartflo Portal API Token</label>
+            <input type="password" id="newOrgApiKey" placeholder="Paste Smartflo API token..." />
+          </div>
+          <div class="form-field">
+            <label>Or Smartflo Email (optional)</label>
+            <input type="email" id="newOrgEmail" placeholder="user@org.com" />
+          </div>
+          <div class="form-field">
+            <label>Or Smartflo Password (optional)</label>
+            <input type="password" id="newOrgPassword" placeholder="Password" />
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;">
+          <button id="createOrgBtn" class="primary">Add Organization</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:14px;background:var(--surface-2);">
+        <h2 style="font-size:0.92rem;margin-bottom:10px;">
+          <span>Connected Organizations</span>
+          <span class="muted" id="orgsCountLabel">0 organizations</span>
+        </h2>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Organization</th>
+                <th>Slug</th>
+                <th>Smartflo Auth</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="orgsTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="background:var(--surface-2);">
+        <h2 style="font-size:0.92rem;margin-bottom:10px;">
+          <span>Issued Claude API Keys</span>
+          <button id="issueAdminKeyBtn" class="sm">+ Issue Admin Key (All Orgs)</button>
+        </h2>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Role</th>
+                <th>Prefix</th>
+                <th>Last Used</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="apiKeysTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Floating AI Assistant Bot (Bottom Right) -->
   <button id="botFab" class="bot-fab" title="Open SmartFlow AI Assistant">
     <span>✦</span>
@@ -675,9 +817,21 @@
 
   <script>
     const STORAGE_KEY = "smartflow_mcp_api_key";
+    const ACCOUNT_STORAGE_KEY = "smartflow_selected_account";
+    let currentUserRole = "tenant";
+    let knownAccounts = [];
 
     function getApiKey() {
       return localStorage.getItem(STORAGE_KEY) || "";
+    }
+
+    function getSelectedAccount() {
+      return localStorage.getItem(ACCOUNT_STORAGE_KEY) || "";
+    }
+
+    function setSelectedAccount(slug) {
+      if (slug) localStorage.setItem(ACCOUNT_STORAGE_KEY, slug);
+      else localStorage.removeItem(ACCOUNT_STORAGE_KEY);
     }
 
     function todayIstYmd() {
@@ -692,14 +846,16 @@
     }
 
     async function apiFetch(path, options = {}) {
+      const selectedAcc = getSelectedAccount();
       const headers = {
         "Content-Type": "application/json",
         ...(getApiKey() ? { Authorization: `Bearer ${getApiKey()}` } : {}),
+        ...(selectedAcc && !options.skipAccountHeader ? { "x-account": selectedAcc } : {}),
         ...(options.headers || {}),
       };
       const res = await fetch(path, { ...options, headers });
       if (res.status === 401) {
-        showAuthScreen("Unauthorized — please enter your valid MCP_API_KEY.");
+        showAuthScreen("Unauthorized — please enter your valid API key.");
         throw new Error("Unauthorized");
       }
       if (!res.ok) {
@@ -707,6 +863,45 @@
         throw new Error(err.error || `HTTP ${res.status}`);
       }
       return res.json();
+    }
+
+    async function loadAccountsContext() {
+      const res = await apiFetch("/api/v1/accounts", { skipAccountHeader: true });
+      currentUserRole = res.role || "tenant";
+      knownAccounts = res.accounts || [];
+      const activeAccounts = knownAccounts.filter((a) => a.active);
+
+      const switcher = document.getElementById("accountSwitcher");
+      const pill = document.getElementById("singleAccountPill");
+      const accountsBtn = document.getElementById("accountsBtn");
+
+      if (currentUserRole === "admin") {
+        accountsBtn.style.display = "inline-block";
+        pill.style.display = "none";
+        switcher.style.display = activeAccounts.length > 0 ? "inline-block" : "none";
+
+        const current = getSelectedAccount();
+        const validCurrent = activeAccounts.find((a) => a.slug === current || a.id === current);
+        const chosen = validCurrent ? (validCurrent.slug || validCurrent.id) : (activeAccounts[0]?.slug || activeAccounts[0]?.id || "");
+        setSelectedAccount(chosen);
+
+        switcher.innerHTML = activeAccounts
+          .map((a) => {
+            const val = a.slug || a.id;
+            return `<option value="${escapeHtml(val)}">${escapeHtml(a.name)}</option>`;
+          })
+          .join("");
+        if (chosen) switcher.value = chosen;
+      } else {
+        accountsBtn.style.display = "none";
+        switcher.style.display = "none";
+        const own = activeAccounts[0];
+        if (own) {
+          setSelectedAccount(own.slug || own.id);
+          pill.textContent = `Org: ${own.name}`;
+          pill.style.display = "inline-flex";
+        }
+      }
     }
 
     function showAuthScreen(msg) {
@@ -1171,10 +1366,264 @@
       document.getElementById("apiKeyInput").value = getApiKey();
       showAuthScreen();
     });
-    document.getElementById("saveKeyBtn").addEventListener("click", () => {
+    document.getElementById("saveKeyBtn").addEventListener("click", async () => {
       const val = document.getElementById("apiKeyInput").value.trim();
       localStorage.setItem(STORAGE_KEY, val);
-      loadDashboard();
+      setSelectedAccount("");
+      try {
+        await loadAccountsContext();
+        await loadDashboard();
+      } catch (e) {
+        if (e.message !== "Unauthorized") setBanner(`Error: ${e.message}`, true);
+      }
+    });
+
+    document.getElementById("accountSwitcher").addEventListener("change", (ev) => {
+      setSelectedAccount(ev.target.value);
+      document.getElementById("departmentFilter").value = "";
+      clearCrossFilter(true);
+    });
+
+    // =========================================================================
+    // Admin Multi-Account & Claude API Keys Modal
+    // =========================================================================
+    function showAccountsMsg(text, isError = false) {
+      const el = document.getElementById("accountsMsg");
+      if (!text) {
+        el.style.display = "none";
+        return;
+      }
+      el.style.display = "flex";
+      el.className = isError ? "banner error" : "banner";
+      el.textContent = text;
+    }
+
+    function showNewKeyReveal(created) {
+      const box = document.getElementById("newKeyReveal");
+      const mcpUrl = `${window.location.origin}/mcp`;
+      const scopeLabel = created.role === "admin"
+        ? "Admin (All Organizations)"
+        : `Organization: ${created.accountSlug || created.tenantId}`;
+      box.style.display = "block";
+      box.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;">
+          <b style="color:#86efac;">New Claude API Key Created (${escapeHtml(scopeLabel)})</b>
+          <button id="copyNewKeyBtn" class="sm primary">Copy Key</button>
+        </div>
+        <div style="margin-bottom:8px;"><code>${escapeHtml(created.apiKey)}</code></div>
+        <div class="muted" style="font-size:0.78rem;">
+          Save this key now — it won't be shown again.<br/>
+          <b>Claude Custom Connector:</b> URL <code>${escapeHtml(mcpUrl)}</code> · Auth: <b>No sign-in</b> · Header: <code>x-api-key</code> = key above · Transport: <b>Streamable HTTP</b>
+        </div>
+      `;
+      document.getElementById("copyNewKeyBtn")?.addEventListener("click", async (ev) => {
+        try {
+          await navigator.clipboard.writeText(created.apiKey);
+          ev.target.textContent = "Copied!";
+        } catch {
+          ev.target.textContent = "Copy manually";
+        }
+      });
+    }
+
+    async function refreshAccountsModal() {
+      document.getElementById("mcpUrlDisplay").textContent = `${window.location.origin}/mcp`;
+      const [accRes, keysRes] = await Promise.all([
+        apiFetch("/api/v1/accounts", { skipAccountHeader: true }),
+        apiFetch("/api/v1/api-keys", { skipAccountHeader: true }),
+      ]);
+      const accounts = accRes.accounts || [];
+      const keys = keysRes.keys || [];
+      const accountNameById = Object.fromEntries(accounts.map((a) => [a.id, a.slug || a.name]));
+
+      document.getElementById("orgsCountLabel").textContent = `${accounts.length} organization${accounts.length === 1 ? "" : "s"}`;
+      document.getElementById("orgsTableBody").innerHTML = accounts.length
+        ? accounts
+            .map((a) => {
+              const slug = a.slug || a.id;
+              return `
+                <tr>
+                  <td><b>${escapeHtml(a.name)}</b></td>
+                  <td><code>${escapeHtml(slug)}</code></td>
+                  <td>${a.hasSmartfloCredentials ? `<span class="badge green">Configured</span>` : `<span class="badge amber">Missing</span>`}</td>
+                  <td>${a.active ? `<span class="badge green">Active</span>` : `<span class="badge gray">Inactive</span>`}</td>
+                  <td style="display:flex;gap:6px;flex-wrap:wrap;">
+                    <button class="sm" data-switch-org="${escapeHtml(slug)}">Switch</button>
+                    <button class="sm primary" data-gen-key="${escapeHtml(slug)}" data-org-name="${escapeHtml(a.name)}">Generate Claude Key</button>
+                  </td>
+                </tr>`;
+            })
+            .join("")
+        : `<tr><td colspan="5" class="muted">No organizations found.</td></tr>`;
+
+      document.querySelectorAll("button[data-switch-org]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          setSelectedAccount(btn.dataset.switchOrg);
+          document.getElementById("accountSwitcher").value = btn.dataset.switchOrg;
+          document.getElementById("accountsModal").classList.remove("open");
+          document.getElementById("departmentFilter").value = "";
+          clearCrossFilter(true);
+        });
+      });
+
+      document.querySelectorAll("button[data-gen-key]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const slug = btn.dataset.genKey;
+          const orgName = btn.dataset.orgName;
+          const label = window.prompt(`Label for ${orgName}'s Claude API key:`, `${orgName} Claude Key`);
+          if (!label || !label.trim()) return;
+          btn.disabled = true;
+          try {
+            const created = await apiFetch(`/api/v1/accounts/${encodeURIComponent(slug)}/api-keys`, {
+              method: "POST",
+              skipAccountHeader: true,
+              body: JSON.stringify({ name: label.trim() }),
+            });
+            showNewKeyReveal(created);
+            showAccountsMsg(`Issued dedicated Claude key for ${orgName}.`);
+            await refreshAccountsModal();
+          } catch (e) {
+            showAccountsMsg(`Failed to issue key: ${e.message}`, true);
+          } finally {
+            btn.disabled = false;
+          }
+        });
+      });
+
+      document.getElementById("apiKeysTableBody").innerHTML = keys.length
+        ? keys
+            .map((k) => {
+              const scope = k.role === "admin" ? "All Orgs" : (accountNameById[k.tenantId] || k.tenantId || "—");
+              const lastUsed = k.lastUsedAt
+                ? new Date(k.lastUsedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })
+                : "Never";
+              return `
+                <tr>
+                  <td><b>${escapeHtml(k.name)}</b> <span class="muted">(${escapeHtml(scope)})</span></td>
+                  <td><span class="badge ${k.role === "admin" ? "blue" : "amber"}">${escapeHtml(k.role)}</span></td>
+                  <td><code>${escapeHtml(k.keyPrefix)}…</code></td>
+                  <td class="muted">${escapeHtml(lastUsed)}</td>
+                  <td>${k.active ? `<span class="badge green">Active</span>` : `<span class="badge red">Revoked</span>`}</td>
+                  <td>${k.active ? `<button class="sm danger" data-revoke-key="${escapeHtml(k.id)}">Revoke</button>` : `<span class="muted">—</span>`}</td>
+                </tr>`;
+            })
+            .join("")
+        : `<tr><td colspan="6" class="muted">No issued API keys yet (using bootstrap MCP_API_KEY).</td></tr>`;
+
+      document.querySelectorAll("button[data-revoke-key]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          if (!window.confirm("Revoke this Claude API key? Any Claude connector using it will lose access immediately.")) return;
+          btn.disabled = true;
+          try {
+            await apiFetch(`/api/v1/api-keys/${encodeURIComponent(btn.dataset.revokeKey)}`, {
+              method: "DELETE",
+              skipAccountHeader: true,
+            });
+            showAccountsMsg("API key revoked.");
+            await refreshAccountsModal();
+          } catch (e) {
+            showAccountsMsg(`Failed to revoke key: ${e.message}`, true);
+          }
+        });
+      });
+    }
+
+    document.getElementById("accountsBtn").addEventListener("click", async () => {
+      document.getElementById("accountsModal").classList.add("open");
+      document.getElementById("newKeyReveal").style.display = "none";
+      showAccountsMsg("");
+      try {
+        await refreshAccountsModal();
+      } catch (e) {
+        showAccountsMsg(`Failed to load accounts: ${e.message}`, true);
+      }
+    });
+
+    document.getElementById("closeAccountsModalBtn").addEventListener("click", () => {
+      document.getElementById("accountsModal").classList.remove("open");
+    });
+
+    document.getElementById("newOrgName").addEventListener("input", (ev) => {
+      const slugInput = document.getElementById("newOrgSlug");
+      if (!slugInput.dataset.touched) {
+        slugInput.value = ev.target.value
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "");
+      }
+    });
+    document.getElementById("newOrgSlug").addEventListener("input", (ev) => {
+      ev.target.dataset.touched = ev.target.value ? "1" : "";
+    });
+
+    document.getElementById("createOrgBtn").addEventListener("click", async (ev) => {
+      const btn = ev.target;
+      const name = document.getElementById("newOrgName").value.trim();
+      const slug = document.getElementById("newOrgSlug").value.trim();
+      const timezone = document.getElementById("newOrgTz").value.trim() || "Asia/Kolkata";
+      const smartfloApiKey = document.getElementById("newOrgApiKey").value.trim();
+      const smartfloEmail = document.getElementById("newOrgEmail").value.trim();
+      const smartfloPassword = document.getElementById("newOrgPassword").value;
+
+      if (!name) {
+        showAccountsMsg("Organization Name is required.", true);
+        return;
+      }
+      if (!smartfloApiKey && !(smartfloEmail && smartfloPassword)) {
+        showAccountsMsg("Provide either a Smartflo Portal API Token or Smartflo Email + Password.", true);
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = "Adding...";
+      try {
+        const payload = { name, timezone };
+        if (slug) payload.slug = slug;
+        if (smartfloApiKey) payload.smartfloApiKey = smartfloApiKey;
+        if (smartfloEmail) payload.smartfloEmail = smartfloEmail;
+        if (smartfloPassword) payload.smartfloPassword = smartfloPassword;
+
+        const created = await apiFetch("/api/v1/accounts", {
+          method: "POST",
+          skipAccountHeader: true,
+          body: JSON.stringify(payload),
+        });
+        document.getElementById("newOrgName").value = "";
+        document.getElementById("newOrgSlug").value = "";
+        document.getElementById("newOrgSlug").dataset.touched = "";
+        document.getElementById("newOrgApiKey").value = "";
+        document.getElementById("newOrgEmail").value = "";
+        document.getElementById("newOrgPassword").value = "";
+        showAccountsMsg(`Added organization "${created.name}" (${created.slug}). You can now switch to it or generate its Claude API key.`);
+        await loadAccountsContext();
+        await refreshAccountsModal();
+      } catch (e) {
+        showAccountsMsg(`Failed to add organization: ${e.message}`, true);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Add Organization";
+      }
+    });
+
+    document.getElementById("issueAdminKeyBtn").addEventListener("click", async (ev) => {
+      const label = window.prompt("Label for the Admin Claude API key (accesses all orgs):", "Admin Claude Key");
+      if (!label || !label.trim()) return;
+      const btn = ev.target;
+      btn.disabled = true;
+      try {
+        const created = await apiFetch("/api/v1/admin/api-keys", {
+          method: "POST",
+          skipAccountHeader: true,
+          body: JSON.stringify({ name: label.trim() }),
+        });
+        showNewKeyReveal(created);
+        showAccountsMsg("Issued new Admin API key (all organizations).");
+        await refreshAccountsModal();
+      } catch (e) {
+        showAccountsMsg(`Failed to issue admin key: ${e.message}`, true);
+      } finally {
+        btn.disabled = false;
+      }
     });
 
     function renderOutcomeChart(rows) {
@@ -1466,7 +1915,11 @@
     if (!getApiKey()) {
       showAuthScreen();
     } else {
-      loadDashboard();
+      loadAccountsContext()
+        .then(() => loadDashboard())
+        .catch((e) => {
+          if (e.message !== "Unauthorized") setBanner(`Error: ${e.message}`, true);
+        });
     }
   </script>
 </body>
