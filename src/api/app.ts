@@ -1,6 +1,7 @@
+import crypto from "node:crypto";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   getAgentPerformance,
@@ -30,6 +31,7 @@ import {
   listAccessibleAccounts,
   listAllAccounts,
   listApiKeyRecords,
+  listSyncableTenants,
   resolveTenantForContext,
   revealApiKeyRecord,
   revokeApiKeyRecord,
@@ -82,6 +84,28 @@ async function requireAdmin(req: FastifyRequest, reply: FastifyReply) {
   if (auth.role !== "admin") {
     throw new ForbiddenError("Admin API key required for this endpoint.");
   }
+}
+
+function safeSecretEquals(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+async function requireCronAuth(req: FastifyRequest, reply: FastifyReply) {
+  if (env.CRON_SECRET) {
+    const headerSecret = String(req.headers["x-cron-secret"] ?? "").trim();
+    const bearerSecret = extractApiKeyToken(req);
+    if (
+      safeSecretEquals(headerSecret, env.CRON_SECRET) ||
+      safeSecretEquals(bearerSecret, env.CRON_SECRET)
+    ) {
+      return;
+    }
+  }
+  await requireAdmin(req, reply);
 }
 
 export function buildApp() {
@@ -535,6 +559,123 @@ export function buildApp() {
       failed: 0,
       remaining: Math.max(0, allPending.length - batch.length),
       mode: "queue",
+    };
+  });
+
+  // Scheduled multi-account sync + inline transcription/analysis (designed for external cron e.g. cron-job.org)
+  app.post("/api/v1/cron/sync", { preHandler: requireCronAuth }, async (req) => {
+    const startedAt = Date.now();
+    const rawQuery = (req.query ?? {}) as Record<string, unknown>;
+    const rawBody =
+      req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
+    const params = z
+      .object({
+        account: z.string().max(120).optional(),
+        windowMinutes: z.coerce.number().int().min(5).max(1440).default(60),
+        processLimit: z.coerce.number().int().min(0).max(20).default(5),
+        timeBudgetMs: z.coerce.number().int().min(5000).max(50000).default(20000),
+      })
+      .parse({ ...rawQuery, ...rawBody });
+
+    const toDate = new Date();
+    const fromDate = new Date(toDate.getTime() - params.windowMinutes * 60 * 1000);
+
+    const targetTenants = params.account
+      ? (() => {
+          return getTenantByIdentifier(params.account!).then((t) => {
+            if (!t || !t.active) {
+              throw new NotFoundError(`Smartflo account "${params.account}" not found or inactive.`);
+            }
+            return [t];
+          });
+        })()
+      : listSyncableTenants();
+
+    const tenantsToSync = await targetTenants;
+    const syncResults: Array<Record<string, unknown>> = [];
+
+    for (const tenant of tenantsToSync) {
+      try {
+        const summary = await syncCallsWindow({
+          tenantId: tenant.id,
+          from: fromDate,
+          to: toDate,
+          syncType: "cron",
+        });
+        syncResults.push({
+          account: tenant.slug ?? tenant.name,
+          status: summary.status,
+          callsFetched: summary.callsFetched,
+          newCalls: summary.newCalls,
+          updatedCalls: summary.updatedCalls,
+          recordingUrlsFound: summary.recordingUrlsFound,
+        });
+      } catch (err) {
+        logger.error({ tenantId: tenant.id, err }, "Cron sync failed for tenant");
+        syncResults.push({
+          account: tenant.slug ?? tenant.name,
+          status: "failed",
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    let attempted = 0;
+    let processed = 0;
+    let failed = 0;
+    let remaining = 0;
+    let stoppedByTimeBudget = false;
+
+    if (params.processLimit > 0 && tenantsToSync.length > 0) {
+      const tenantIds = tenantsToSync.map((t) => t.id);
+      const pending = await db
+        .select({ callId: calls.id, tenantId: calls.tenantId })
+        .from(calls)
+        .innerJoin(recordings, eq(recordings.callId, calls.id))
+        .leftJoin(callAnalyses, eq(callAnalyses.callId, calls.id))
+        .where(
+          and(
+            inArray(calls.tenantId, tenantIds),
+            eq(calls.status, "answered"),
+            sql`${recordings.status} != 'failed'`,
+            isNull(callAnalyses.id)
+          )
+        )
+        .orderBy(desc(calls.startedAt))
+        .limit(100);
+
+      const batch = pending.slice(0, params.processLimit);
+      for (const item of batch) {
+        if (Date.now() - startedAt >= params.timeBudgetMs) {
+          stoppedByTimeBudget = true;
+          break;
+        }
+        attempted += 1;
+        try {
+          await transcribeCallRecording(item.callId);
+          await analyzeCallTranscript(item.callId);
+          processed += 1;
+        } catch (err) {
+          failed += 1;
+          logger.warn({ callId: item.callId, err }, "Cron inline call processing failed");
+        }
+      }
+      remaining = Math.max(0, pending.length - attempted);
+    }
+
+    return {
+      status: "ok",
+      durationMs: Date.now() - startedAt,
+      windowMinutes: params.windowMinutes,
+      tenantsSynced: tenantsToSync.length,
+      syncResults,
+      processing: {
+        attempted,
+        processed,
+        failed,
+        remaining,
+        stoppedByTimeBudget,
+      },
     };
   });
 

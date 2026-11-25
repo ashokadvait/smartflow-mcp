@@ -91,6 +91,18 @@ Use the remote Streamable HTTP endpoint (`POST /mcp`) in your Claude MCP configu
 }
 ```
 
+## Scheduled Sync (Free via cron-job.org)
+
+To keep call records, transcripts, and AI analyses continuously up-to-date on Vercel Hobby (\$0/month), schedule a recurring **POST** request to:
+
+- **URL:** `https://your-server.example.com/api/v1/cron/sync`
+- **Method:** `POST`
+- **Schedule:** Every 5 or 10 minutes
+- **Header:** `Authorization: Bearer <CRON_SECRET or MCP_API_KEY>` (or `x-cron-secret: <CRON_SECRET>`)
+- **Optional query params:** `?windowMinutes=60&processLimit=5&timeBudgetMs=20000`
+
+Each run syncs the last 60 minutes across all active Smartflo accounts and transcribes + analyzes pending answered calls within a 20-second budget so cron-job.org never times out.
+
 ## Tests & Build
 
 ```bash

@@ -41,6 +41,7 @@ const EnvSchema = z.object({
   MAX_AUDIO_SIZE_MB: z.coerce.number().min(1).max(200).default(25),
 
   MCP_API_KEY: z.string().optional().default(""),
+  CRON_SECRET: z.string().optional().default(""),
   ENCRYPTION_KEY: z.string().optional().default(""),
   PHONE_HASH_SECRET: z.string().optional().default(""),
 });
