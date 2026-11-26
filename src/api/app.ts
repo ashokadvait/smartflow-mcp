@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { waitUntil } from "@vercel/functions";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
@@ -572,111 +573,138 @@ export function buildApp() {
       .object({
         account: z.string().max(120).optional(),
         windowMinutes: z.coerce.number().int().min(5).max(1440).default(60),
-        processLimit: z.coerce.number().int().min(0).max(20).default(5),
-        timeBudgetMs: z.coerce.number().int().min(5000).max(50000).default(20000),
+        processLimit: z.coerce.number().int().min(0).max(20).default(10),
+        timeBudgetMs: z.coerce.number().int().min(5000).max(240000).optional(),
+        sync: z
+          .union([z.boolean(), z.enum(["true", "false"])])
+          .transform((v) => v === true || v === "true")
+          .default(false),
       })
       .parse({ ...rawQuery, ...rawBody });
 
-    const toDate = new Date();
-    const fromDate = new Date(toDate.getTime() - params.windowMinutes * 60 * 1000);
+    const runInBackground = Boolean(process.env.VERCEL) && !params.sync;
+    const effectiveTimeBudgetMs = params.timeBudgetMs ?? (runInBackground ? 180000 : 15000);
 
-    const targetTenants = params.account
-      ? (() => {
-          return getTenantByIdentifier(params.account!).then((t) => {
+    const executeCronSync = async () => {
+      const toDate = new Date();
+      const fromDate = new Date(toDate.getTime() - params.windowMinutes * 60 * 1000);
+
+      const tenantsToSync = params.account
+        ? await getTenantByIdentifier(params.account).then((t) => {
             if (!t || !t.active) {
               throw new NotFoundError(`Smartflo account "${params.account}" not found or inactive.`);
             }
             return [t];
-          });
-        })()
-      : listSyncableTenants();
+          })
+        : await listSyncableTenants();
 
-    const tenantsToSync = await targetTenants;
-    const syncResults: Array<Record<string, unknown>> = [];
+      const syncResults: Array<Record<string, unknown>> = [];
 
-    for (const tenant of tenantsToSync) {
-      try {
-        const summary = await syncCallsWindow({
-          tenantId: tenant.id,
-          from: fromDate,
-          to: toDate,
-          syncType: "cron",
-        });
-        syncResults.push({
-          account: tenant.slug ?? tenant.name,
-          status: summary.status,
-          callsFetched: summary.callsFetched,
-          newCalls: summary.newCalls,
-          updatedCalls: summary.updatedCalls,
-          recordingUrlsFound: summary.recordingUrlsFound,
-        });
-      } catch (err) {
-        logger.error({ tenantId: tenant.id, err }, "Cron sync failed for tenant");
-        syncResults.push({
-          account: tenant.slug ?? tenant.name,
-          status: "failed",
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-
-    let attempted = 0;
-    let processed = 0;
-    let failed = 0;
-    let remaining = 0;
-    let stoppedByTimeBudget = false;
-
-    if (params.processLimit > 0 && tenantsToSync.length > 0) {
-      const tenantIds = tenantsToSync.map((t) => t.id);
-      const pending = await db
-        .select({ callId: calls.id, tenantId: calls.tenantId })
-        .from(calls)
-        .innerJoin(recordings, eq(recordings.callId, calls.id))
-        .leftJoin(callAnalyses, eq(callAnalyses.callId, calls.id))
-        .where(
-          and(
-            inArray(calls.tenantId, tenantIds),
-            eq(calls.status, "answered"),
-            sql`${recordings.status} != 'failed'`,
-            isNull(callAnalyses.id)
-          )
-        )
-        .orderBy(desc(calls.startedAt))
-        .limit(100);
-
-      const batch = pending.slice(0, params.processLimit);
-      for (const item of batch) {
-        if (Date.now() - startedAt >= params.timeBudgetMs) {
-          stoppedByTimeBudget = true;
-          break;
-        }
-        attempted += 1;
+      for (const tenant of tenantsToSync) {
         try {
-          await transcribeCallRecording(item.callId);
-          await analyzeCallTranscript(item.callId);
-          processed += 1;
+          const summary = await syncCallsWindow({
+            tenantId: tenant.id,
+            from: fromDate,
+            to: toDate,
+            syncType: "cron",
+          });
+          syncResults.push({
+            account: tenant.slug ?? tenant.name,
+            status: summary.status,
+            callsFetched: summary.callsFetched,
+            newCalls: summary.newCalls,
+            updatedCalls: summary.updatedCalls,
+            recordingUrlsFound: summary.recordingUrlsFound,
+          });
         } catch (err) {
-          failed += 1;
-          logger.warn({ callId: item.callId, err }, "Cron inline call processing failed");
+          logger.error({ tenantId: tenant.id, err }, "Cron sync failed for tenant");
+          syncResults.push({
+            account: tenant.slug ?? tenant.name,
+            status: "failed",
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
       }
-      remaining = Math.max(0, pending.length - attempted);
+
+      let attempted = 0;
+      let processed = 0;
+      let failed = 0;
+      let remaining = 0;
+      let stoppedByTimeBudget = false;
+
+      if (params.processLimit > 0 && tenantsToSync.length > 0) {
+        const tenantIds = tenantsToSync.map((t) => t.id);
+        const pending = await db
+          .select({ callId: calls.id, tenantId: calls.tenantId })
+          .from(calls)
+          .innerJoin(recordings, eq(recordings.callId, calls.id))
+          .leftJoin(callAnalyses, eq(callAnalyses.callId, calls.id))
+          .where(
+            and(
+              inArray(calls.tenantId, tenantIds),
+              eq(calls.status, "answered"),
+              sql`${recordings.status} != 'failed'`,
+              isNull(callAnalyses.id)
+            )
+          )
+          .orderBy(desc(calls.startedAt))
+          .limit(100);
+
+        const batch = pending.slice(0, params.processLimit);
+        for (const item of batch) {
+          if (Date.now() - startedAt >= effectiveTimeBudgetMs) {
+            stoppedByTimeBudget = true;
+            break;
+          }
+          attempted += 1;
+          try {
+            await transcribeCallRecording(item.callId);
+            await analyzeCallTranscript(item.callId);
+            processed += 1;
+          } catch (err) {
+            failed += 1;
+            logger.warn({ callId: item.callId, err }, "Cron inline call processing failed");
+          }
+        }
+        remaining = Math.max(0, pending.length - attempted);
+      }
+
+      const result = {
+        status: "ok",
+        mode: runInBackground ? "background" : "sync",
+        durationMs: Date.now() - startedAt,
+        windowMinutes: params.windowMinutes,
+        tenantsSynced: tenantsToSync.length,
+        syncResults,
+        processing: {
+          attempted,
+          processed,
+          failed,
+          remaining,
+          stoppedByTimeBudget,
+        },
+      };
+
+      logger.info(result, "Cron sync finished");
+      return result;
+    };
+
+    if (runInBackground) {
+      waitUntil(
+        executeCronSync().catch((err) => {
+          logger.error({ err }, "Background cron sync failed");
+        })
+      );
+      return {
+        status: "accepted",
+        mode: "background",
+        windowMinutes: params.windowMinutes,
+        processLimit: params.processLimit,
+        startedAt: new Date(startedAt).toISOString(),
+      };
     }
 
-    return {
-      status: "ok",
-      durationMs: Date.now() - startedAt,
-      windowMinutes: params.windowMinutes,
-      tenantsSynced: tenantsToSync.length,
-      syncResults,
-      processing: {
-        attempted,
-        processed,
-        failed,
-        remaining,
-        stoppedByTimeBudget,
-      },
-    };
+    return executeCronSync();
   });
 
   // Smartflo webhook receiver (default account, backward compatible)
