@@ -10,6 +10,8 @@
     "mcp:stdio:prod": "MCP_STDIO=true node dist/mcp-stdio.js",
     "worker": "tsx src/queue/run-workers.ts",
     "sync:calls": "tsx src/cli/sync-calls.ts",
+    "backfill:calls": "tsx src/cli/backfill-calls.ts",
+    "backfill:process": "tsx src/cli/backfill-process.ts",
     "process:call": "tsx src/cli/process-call.ts",
     "process:pending": "tsx src/cli/process-pending.ts",
     "enqueue:pending": "tsx src/cli/enqueue-pending.ts",

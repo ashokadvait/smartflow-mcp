@@ -1,11 +1,13 @@
 import { UnrecoverableError, Worker } from "bullmq";
 import { and, eq, isNull } from "drizzle-orm";
+import { env } from "../config/env.js";
 import { closeDb, db } from "../db/client.js";
 import { callAnalyses, calls, recordings } from "../db/schema/index.js";
 import { analyzeCallTranscript } from "../pipeline/analysis.pipeline.js";
 import { downloadAndValidateRecording } from "../pipeline/recording.pipeline.js";
 import { transcribeCallRecording } from "../pipeline/transcription.pipeline.js";
 import { listSyncableTenants } from "../services/account.service.js";
+import { getDailyQuotaStatus } from "../services/quota.service.js";
 import { syncCallsWindow } from "../services/sync.service.js";
 import { PermanentJobError } from "../utils/errors.js";
 import { logger } from "../utils/logger.js";
@@ -118,13 +120,18 @@ async function main() {
       );
       return res;
     },
-    { connection, concurrency: 3 }
+    { connection, concurrency: env.RECORDING_WORKER_CONCURRENCY }
   );
 
   const transcriptionWorker = new Worker(
     "transcription",
     async (job) => {
       const { callId } = job.data as { callId: string };
+      const quota = await getDailyQuotaStatus();
+      if (!quota.canTranscribe) {
+        logger.warn({ callId, reason: quota.blockedReason }, "Daily/hourly transcription quota reached; deferring job");
+        throw new Error(quota.blockedReason ?? "Daily transcription quota reached");
+      }
       const transcript = await wrapPermanentErrors(() => transcribeCallRecording(callId));
       await queues.analysisQueue.add(
         "analyze-call",
@@ -133,17 +140,30 @@ async function main() {
       );
       return { transcriptId: transcript.id };
     },
-    { connection, concurrency: 2 }
+    {
+      connection,
+      concurrency: env.TRANSCRIPTION_WORKER_CONCURRENCY,
+      limiter: { max: env.TRANSCRIPTION_RPM_LIMIT, duration: 60_000 },
+    }
   );
 
   const analysisWorker = new Worker(
     "analysis",
     async (job) => {
       const { callId } = job.data as { callId: string };
+      const quota = await getDailyQuotaStatus();
+      if (!quota.canAnalyze) {
+        logger.warn({ callId, reason: quota.blockedReason }, "Daily analysis quota reached; deferring job");
+        throw new Error(quota.blockedReason ?? "Daily analysis quota reached");
+      }
       const analysis = await wrapPermanentErrors(() => analyzeCallTranscript(callId));
       return { analysisId: analysis.id };
     },
-    { connection, concurrency: 2 }
+    {
+      connection,
+      concurrency: env.ANALYSIS_WORKER_CONCURRENCY,
+      limiter: { max: env.ANALYSIS_RPM_LIMIT, duration: 60_000 },
+    }
   );
 
   const workers = [syncWorker, recordingWorker, transcriptionWorker, analysisWorker];

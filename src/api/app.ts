@@ -41,6 +41,7 @@ import {
 } from "../services/account.service.js";
 import { askCallAnalytics } from "../services/ask-analytics.service.js";
 import { recordToolAudit } from "../services/audit.service.js";
+import { getDailyQuotaStatus } from "../services/quota.service.js";
 import { generateFullDailyReport } from "../services/report.service.js";
 import { syncCallsWindow, upsertNormalizedCall } from "../services/sync.service.js";
 import { DASHBOARD_HTML } from "../ui/dashboard-html.js";
@@ -472,6 +473,11 @@ export function buildApp() {
     return getSafeProviderMetadata();
   });
 
+  // Daily transcription & analysis quota status (rolling 24h / 1h)
+  app.get("/api/v1/quota/status", { preHandler: requireApiKey }, async () => {
+    return getDailyQuotaStatus();
+  });
+
   // Queue depths & health (observability; degrades gracefully in serverless without Redis)
   app.get("/api/v1/queues/status", { preHandler: requireApiKey }, async () => {
     if (process.env.VERCEL && !process.env.REDIS_URL) {
@@ -631,42 +637,54 @@ export function buildApp() {
       let failed = 0;
       let remaining = 0;
       let stoppedByTimeBudget = false;
+      let stoppedByQuota = false;
 
       if (params.processLimit > 0 && tenantsToSync.length > 0) {
-        const tenantIds = tenantsToSync.map((t) => t.id);
-        const pending = await db
-          .select({ callId: calls.id, tenantId: calls.tenantId })
-          .from(calls)
-          .innerJoin(recordings, eq(recordings.callId, calls.id))
-          .leftJoin(callAnalyses, eq(callAnalyses.callId, calls.id))
-          .where(
-            and(
-              inArray(calls.tenantId, tenantIds),
-              eq(calls.status, "answered"),
-              sql`${recordings.status} != 'failed'`,
-              isNull(callAnalyses.id)
+        const quota = await getDailyQuotaStatus();
+        if (!quota.canTranscribe || !quota.canAnalyze) {
+          stoppedByQuota = true;
+          logger.info({ reason: quota.blockedReason }, "Skipping cron inline processing: daily/hourly quota reached");
+        } else {
+          const tenantIds = tenantsToSync.map((t) => t.id);
+          const pending = await db
+            .select({ callId: calls.id, tenantId: calls.tenantId })
+            .from(calls)
+            .innerJoin(recordings, eq(recordings.callId, calls.id))
+            .leftJoin(callAnalyses, eq(callAnalyses.callId, calls.id))
+            .where(
+              and(
+                inArray(calls.tenantId, tenantIds),
+                eq(calls.status, "answered"),
+                sql`${recordings.status} != 'failed'`,
+                isNull(callAnalyses.id)
+              )
             )
-          )
-          .orderBy(desc(calls.startedAt))
-          .limit(100);
+            .orderBy(desc(calls.startedAt))
+            .limit(100);
 
-        const batch = pending.slice(0, params.processLimit);
-        for (const item of batch) {
-          if (Date.now() - startedAt >= effectiveTimeBudgetMs) {
-            stoppedByTimeBudget = true;
-            break;
+          const maxByQuota = Math.min(
+            params.processLimit,
+            quota.transcriptions.remaining,
+            quota.analyses.remaining
+          );
+          const batch = pending.slice(0, maxByQuota);
+          for (const item of batch) {
+            if (Date.now() - startedAt >= effectiveTimeBudgetMs) {
+              stoppedByTimeBudget = true;
+              break;
+            }
+            attempted += 1;
+            try {
+              await transcribeCallRecording(item.callId);
+              await analyzeCallTranscript(item.callId);
+              processed += 1;
+            } catch (err) {
+              failed += 1;
+              logger.warn({ callId: item.callId, err }, "Cron inline call processing failed");
+            }
           }
-          attempted += 1;
-          try {
-            await transcribeCallRecording(item.callId);
-            await analyzeCallTranscript(item.callId);
-            processed += 1;
-          } catch (err) {
-            failed += 1;
-            logger.warn({ callId: item.callId, err }, "Cron inline call processing failed");
-          }
+          remaining = Math.max(0, pending.length - attempted);
         }
-        remaining = Math.max(0, pending.length - attempted);
       }
 
       const result = {
@@ -682,6 +700,7 @@ export function buildApp() {
           failed,
           remaining,
           stoppedByTimeBudget,
+          stoppedByQuota,
         },
       };
 

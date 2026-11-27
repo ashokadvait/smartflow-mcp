@@ -1,7 +1,7 @@
 import { ValidationError } from "./errors.js";
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-const MAX_RANGE_DAYS = 90;
+const MAX_RANGE_DAYS = 365;
 
 /**
  * Parse a Smartflo timestamp (typically IST "YYYY-MM-DD HH:mm:ss" with no offset) into a UTC Date.

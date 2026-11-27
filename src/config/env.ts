@@ -39,6 +39,21 @@ const EnvSchema = z.object({
   AUDIO_STORAGE_PROVIDER: z.enum(["local"]).default("local"),
   AUDIO_STORAGE_PATH: z.string().default("./storage/audio"),
   MAX_AUDIO_SIZE_MB: z.coerce.number().min(1).max(200).default(25),
+  CLEANUP_AUDIO_AFTER_TRANSCRIPTION: z
+    .union([z.boolean(), z.enum(["true", "false", ""])])
+    .transform((v) => v === true || v === "true")
+    .default(false),
+
+  // Daily quota & worker concurrency limits (defaults tuned safely for Groq Free Tier)
+  DAILY_TRANSCRIPTION_LIMIT: z.coerce.number().int().min(1).max(100000).default(1500),
+  DAILY_TRANSCRIPTION_AUDIO_SECONDS_LIMIT: z.coerce.number().int().min(60).max(1000000).default(25000),
+  HOURLY_TRANSCRIPTION_AUDIO_SECONDS_LIMIT: z.coerce.number().int().min(60).max(1000000).default(6800),
+  DAILY_ANALYSIS_LIMIT: z.coerce.number().int().min(1).max(100000).default(900),
+  TRANSCRIPTION_RPM_LIMIT: z.coerce.number().int().min(1).max(600).default(18),
+  ANALYSIS_RPM_LIMIT: z.coerce.number().int().min(1).max(600).default(25),
+  RECORDING_WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(4),
+  TRANSCRIPTION_WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(3),
+  ANALYSIS_WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(3),
 
   MCP_API_KEY: z.string().optional().default(""),
   CRON_SECRET: z.string().optional().default(""),

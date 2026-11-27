@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import fs from "node:fs/promises";
 import { and, desc, eq } from "drizzle-orm";
 import { env } from "../config/env.js";
 import { db } from "../db/client.js";
@@ -12,7 +13,13 @@ import { downloadAndValidateRecording } from "./recording.pipeline.js";
 
 export async function transcribeCallRecording(
   callId: string,
-  options: { provider?: TranscriptionProvider; force?: boolean; language?: string; prompt?: string } = {}
+  options: {
+    provider?: TranscriptionProvider;
+    force?: boolean;
+    language?: string;
+    prompt?: string;
+    cleanupAudio?: boolean;
+  } = {}
 ) {
   const [rec] = await db
     .select()
@@ -85,6 +92,11 @@ export async function transcribeCallRecording(
     { callId, transcriptId: saved?.id, provider: provider.name, language: result.language, qualityFlag },
     "Call transcribed and persisted"
   );
+
+  if (options.cleanupAudio ?? env.CLEANUP_AUDIO_AFTER_TRANSCRIPTION) {
+    await fs.unlink(downloaded.filePath).catch(() => undefined);
+  }
+
   return saved!;
 }
 

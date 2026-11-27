@@ -13,6 +13,8 @@ import {
 import { formatForSmartfloQuery, getDayBoundsUtc, parseSmartfloTimestamp, validateDateRange } from "../src/utils/dates.js";
 import { decryptSecret, encryptSecret, hashPhone, maskPhone, redactParameters } from "../src/utils/pii.js";
 import { generateRawApiKey, hashApiKey, normalizeSlug, toSafeAccountSummary } from "../src/services/account.service.js";
+import { buildDateChunks } from "../src/services/backfill.service.js";
+import { classifyRateLimitError } from "../src/services/quota.service.js";
 
 describe("Date & Timezone utilities", () => {
   it("parses Smartflo IST timestamp to exact UTC Date", () => {
@@ -320,6 +322,45 @@ describe("Multi-account helpers & API key generation", () => {
     expect(summary.hasWebhookSecret).toBe(true);
     expect(JSON.stringify(summary)).not.toContain("ciphertext");
     expect(JSON.stringify(summary)).not.toContain("iv:tag");
+  });
+});
+
+describe("Backfill chunking & rate-limit classification", () => {
+  it("splits a date range into bounded chunks in newest-first or oldest-first order", () => {
+    const from = new Date("2026-06-01T00:00:00Z");
+    const to = new Date("2026-06-22T00:00:00Z");
+    const newestFirst = buildDateChunks(from, to, 7, "newest");
+    expect(newestFirst).toHaveLength(3);
+    expect(newestFirst[0]!.to.toISOString()).toBe("2026-06-22T00:00:00.000Z");
+    expect(newestFirst[2]!.from.toISOString()).toBe("2026-06-01T00:00:00.000Z");
+
+    const oldestFirst = buildDateChunks(from, to, 7, "oldest");
+    expect(oldestFirst[0]!.from.toISOString()).toBe("2026-06-01T00:00:00.000Z");
+    expect(oldestFirst[2]!.to.toISOString()).toBe("2026-06-22T00:00:00.000Z");
+  });
+
+  it("classifies Groq 429 minute, hourly, and daily limits accurately", () => {
+    const daily = classifyRateLimitError({
+      status: 429,
+      message: "Rate limit reached for model whisper-large-v3-turbo: audio seconds per day (ASPD). Please try again in 3h12m10s.",
+    });
+    expect(daily.kind).toBe("daily_limit");
+
+    const hourly = classifyRateLimitError({
+      status: 429,
+      message: "Rate limit reached: audio seconds per hour. Please try again in 24m10s.",
+    });
+    expect(hourly.kind).toBe("hourly_limit");
+
+    const minute = classifyRateLimitError({
+      status: 429,
+      message: "Rate limit reached: requests per minute. Please try again in 8.5s.",
+    });
+    expect(minute.kind).toBe("minute_limit");
+    expect(minute.retryAfterMs).toBeGreaterThanOrEqual(8500);
+
+    const normal = classifyRateLimitError(new Error("Network timeout"));
+    expect(normal.kind).toBe("none");
   });
 });
 
